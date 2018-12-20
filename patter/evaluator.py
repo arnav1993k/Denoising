@@ -42,7 +42,8 @@ class Evaluator(object):
 
 def validate(val_loader, model, decoder=None, tqdm=True, training=False, log_n_examples=0, verbose=False):
     labels = model.module.labels if type(model) == torch.nn.DataParallel else model.labels
-    target_decoder = GreedyCTCDecoder(labels)
+    blank_index = model.module.blank_index if type(model) == torch.nn.DataParallel else model.blank_index
+    target_decoder = GreedyCTCDecoder(labels, blank_index=blank_index)
     if decoder is None:
         decoder = target_decoder
 

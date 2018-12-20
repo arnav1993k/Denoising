@@ -1,18 +1,24 @@
 import torch
 from marshmallow.exceptions import ValidationError
 from .models.deepspeech import DeepSpeechOptim
+from .models.jasper import Jasper
 from .config import SpeechModelConfiguration
 
 
 class ModelFactory(object):
     _models = {
-        "DeepSpeechOptim": DeepSpeechOptim
+        "DeepSpeechOptim": DeepSpeechOptim,
+        "Jasper": Jasper
     }
 
     @classmethod
     def create(cls, cfg, model_type=None):
         if model_type is None:
-            model_type = cfg['model']
+            try:
+                model_type = cfg['model']
+            except ValueError as err:
+                print("Unknown model type:", model_type)
+                raise err
         klass = cls._models[model_type]
         try:
             cfg = SpeechModelConfiguration().load(cfg)

@@ -11,6 +11,8 @@ from patter.util import AverageMeter, TensorboardLogger
 from patter.models import SpeechModel
 from patter.evaluator import validate
 
+from apex import amp
+
 optimizers = {
     "sgd": torch.optim.SGD,
     "adam": torch.optim.Adam
@@ -34,6 +36,10 @@ class Trainer(object):
         self.tqdm = tqdm
         self.max_norm = self.cfg.get('max_norm', None)
         self.logger = TensorboardLogger(train_config['expt_id'], self.output['log_path'], include_grad=True)
+        self.fp16 = train_config['fp16']
+        self.amp = amp.init(enabled=self.fp16)
+        if self.fp16:
+            print("Trainer initialized in fp16 mode.")
 
     def warmup(self, model, corpus, optimizer):
         """
@@ -53,7 +59,8 @@ class Trainer(object):
         optimizer.zero_grad()
         output, output_len = model(feat, feat_len)
         loss = model.module.loss(output, target, output_len.cpu().squeeze(0), target_len)
-        loss.backward()
+        with self.amp.scale_loss(loss, optimizer) as scaled_loss:
+            scaled_loss.backward()
         optimizer.step()
         del feat
         del loss
@@ -191,7 +198,8 @@ class Trainer(object):
             losses.update(scalar_loss, feat.size(0))
 
             # compute gradient
-            loss.backward()
+            with self.amp.scale_loss(loss, optimizer) as scaled_loss:
+                scaled_loss.backward()
             if self.max_norm:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), self.max_norm)
             optimizer.step()

@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from .manifest import Manifest
-from .features import PerturbedSpectrogramFeaturizer
+from .features import FeaturizerFactory
 from patter.config import CorporaConfiguration
 from torch.utils.data import Dataset
 from torch.utils.data.sampler import Sampler
@@ -117,8 +117,9 @@ class AudioDataset(Dataset):
         dataset = datasets[manifest]
 
         augmentation_config = config['augmentation'] if dataset['augment'] else []
-        featurizer = PerturbedSpectrogramFeaturizer.from_config(feature_config,
-                                                                perturbation_configs=augmentation_config)
+        featurizer = FeaturizerFactory.from_config(feature_config,
+                                                   perturbation_configs=augmentation_config)
 
-        return cls(dataset['manifest'], labels, featurizer, max_duration=config['max_duration'],
+        return cls(dataset['manifest'], labels, featurizer, 
+                   max_duration=config['max_duration'],
                    min_duration=config['min_duration'])

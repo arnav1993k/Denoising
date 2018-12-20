@@ -9,8 +9,8 @@ valid_decoders = {
 
 class DecoderFactory(object):
     @classmethod
-    def create(cls, cfg, labels, decoder_type=None):
+    def create(cls, cfg, labels, decoder_type=None, blank_index=0):
         if decoder_type is None:
             decoder_type = cfg['algorithm']
         klass = valid_decoders[decoder_type]
-        return klass.from_config(cfg, labels)
+        return klass.from_config(cfg, labels, blank_index=blank_index)

@@ -21,43 +21,68 @@ activations = {
     "swish": Swish
 }
 
-supported_rnns = {
-    'lstm': nn.LSTM,
-    'rnn': nn.RNN,
-    'gru': nn.GRU
-}
-supported_rnns_inv = dict((v, k) for k, v in supported_rnns.items())
+class JasperBlock(nn.Module):
+    def __init__(self, inplanes, planes, repeat=3, kernel_size=11, stride=1, dilation=1, padding=0, dropout=0.2, activation=None, residual=True):
+        super(JasperBlock, self).__init__()
 
+        layers = []
+        inplanes_loop = inplanes
+        for _ in range(repeat - 1):
+            layers.extend(self._get_conv_bn_layer(inplanes_loop, planes, kernel_size=kernel_size, stride=stride, dilation=dilation, padding=kernel_size[0]//2))
+            layers.extend(self._get_act_dropout_layer(dropout=dropout, activation=activation))
+            inplanes_loop = planes
+        layers.extend(self._get_conv_bn_layer(inplanes_loop, planes, kernel_size=kernel_size, stride=stride, dilation=dilation, padding=kernel_size[0]//2))
+        
+        self.conv = nn.Sequential(*layers)
+        self.res = nn.Sequential(*self._get_conv_bn_layer(inplanes, planes, kernel_size=1)) if residual else None
+        self.out = nn.Sequential(*self._get_act_dropout_layer(dropout=dropout, activation=activation))
+    
+    def _get_conv_bn_layer(self, inplanes, planes, kernel_size=11, stride=1, dilation=1, padding=0):
+        layers = [
+            nn.Conv1d(inplanes, planes, kernel_size, stride=stride, dilation=dilation, padding=padding, bias=False),
+            nn.BatchNorm1d(planes)
+        ]
+        return layers
+    
+    def _get_act_dropout_layer(self, dropout=0.2, activation=None):
+        if activation is None:
+            activation = nn.Hardtanh(min_val=0.0, max_val=20.0)
+        layers = [
+            activation,
+            nn.Dropout(p=dropout)
+        ]
+        return layers
+    
+    def forward(self, x):
+        out = self.conv(x)
+        if self.res is not None:
+            out += self.res(x)
+        out = self.out(out)
 
-class DeepSpeechOptim(SpeechModel):
+        return out
+
+class Jasper(SpeechModel):
     def __init__(self, cfg):
-        super(DeepSpeechOptim, self).__init__(cfg)
+        super(Jasper, self).__init__(cfg)
         self.loss_func = None
 
         # Add a `\u00a0` (no break space) label as a "BLANK" symbol for CTC
-        self.labels = ['\u00a0'] + cfg['labels']['labels']
-        self.blank_index = 0
+        self.labels = cfg['labels']['labels'] + ['\u00a0']
+        self.blank_index = len(self.labels) - 1
 
-        # create the convolutional input layer(s)
-        self.conv = self._get_cnn_layers(cfg['cnn'])
+        activation = activations[cfg['encoder']['activation']](*cfg['encoder']['activation_params'])
+        feat_in = cfg['input']['features']
 
-        # create the RNN(s)
-        rnn_input_size = self._get_rnn_input_size(cfg['input']['sample_rate'], cfg['input']['window_size'])
-        rnn_class = DeepBatchRNN if cfg['rnn']['batch_norm'] else NoiseRNN
-        self.rnn = rnn_class(input_size=rnn_input_size, hidden_size=cfg['rnn']['size'],
-                             bidirectional=cfg['rnn']['bidirectional'], num_layers=cfg['rnn']['layers'],
-                             rnn_type=supported_rnns[cfg['rnn']['rnn_type']],
-                             weight_noise=cfg['rnn']['noise'], batch_norm=cfg['rnn']['batch_norm'])
-
-        # generate the optional lookahead layer and fully-connected layer
-        output = []
-        if not cfg['rnn']['bidirectional']:
-            output.append(LookaheadConvolution(cfg['rnn']['size'], context=cfg['ctx']['context']))
-            output.append(activations[cfg['ctx']['activation']](*cfg['ctx']['activation_params']))
-        if cfg['rnn']['batch_norm']:
-            output.append(SequenceWise(nn.BatchNorm1d(cfg['rnn']['size'])))
-        output.append(nn.Linear(cfg['rnn']['size'], len(self.labels), bias=False))
-        self.output = nn.Sequential(*output)
+        encoder_layers = []
+        for lcfg in cfg['jasper']:
+            encoder_layers.append(JasperBlock(feat_in, lcfg['filters'], repeat=lcfg['repeat'], 
+                                              kernel_size=lcfg['kernel'], stride=lcfg['stride'], 
+                                              dilation=lcfg['dilation'], dropout=lcfg['dropout'], 
+                                              residual=lcfg['residual'], activation=activation))
+            feat_in = lcfg['filters']
+        
+        self.encoder = nn.Sequential(*encoder_layers)
+        self.decoder = nn.Linear(feat_in, len(self.labels))
 
         # and output activation (softmax) ONLY at inference time (CTC applies softmax during training)
         self.inference_softmax = InferenceBatchSoftmax()
@@ -88,30 +113,10 @@ class DeepSpeechOptim(SpeechModel):
         return self.loss_func(x, y, x_length, y_length)
 
     def init_weights(self):
-        """
-        Initialize weights with sensible defaults for the various layer types
-        :return:
-        """
-        ih = ((name, param.data) for name, param in self.named_parameters() if 'weight_ih' in name)
-        hh = ((name, param.data) for name, param in self.named_parameters() if 'weight_hh' in name)
-        b = ((name, param.data) for name, param in self.named_parameters() if 'bias' in name)
-        w = ((name, param.data) for name, param in self.named_parameters() if 'weight' in name and 'rnn' not in name and "batch_norm" not in name and param.dim() > 1)
-
-        for t in ih:
-            nn.init.xavier_uniform_(t[1])
-        for t in w:
-            nn.init.xavier_uniform_(t[1])
-        for t in hh:
-            nn.init.orthogonal_(t[1])
-        for t in b:
-            nn.init.constant_(t[1], 0)
+        pass
 
     def flatten_parameters(self):
-        """
-        Call flatten_parameters on underlying RNN(s)
-        :return:
-        """
-        self.rnn.flatten_parameters()
+        pass
 
     def get_seq_lens(self, input_length):
         """
@@ -133,27 +138,6 @@ class DeepSpeechOptim(SpeechModel):
     #         if type(m) == nn.modules.conv.Conv2d:
     #             seq_len = ((seq_len + 2 * m.padding[1] - m.dilation[1] * (m.kernel_size[1] - 1) - 1) / m.stride[1] + 1)
     #     offsets = (1/seq_len) * offsets *
-
-    @staticmethod
-    def _get_cnn_layers(cfg):
-        """
-        Given the array of cnn configuration objects, create a sequential model consisting of Conv2d layers,
-        optional batchnorm, and an activation function.
-        :param cfg: array of CNN configuration objects
-        :return: nn.Sequential of CNNs, BN, and Activations
-        """
-        cnns = []
-        for x, cnn_cfg in enumerate(cfg):
-            in_filters = cfg[x - 1]['filters'] if x > 0 else 1
-            cnn = nn.Conv2d(in_filters, cnn_cfg['filters'],
-                            kernel_size=tuple(cnn_cfg['kernel']),
-                            stride=tuple(cnn_cfg['stride']),
-                            padding=tuple(cnn_cfg['padding']))
-            cnns.append(("{}-cnn".format(x), cnn),)
-            if cnn_cfg['batch_norm']:
-                cnns.append(("{}-bn".format(x), nn.BatchNorm2d(cnn_cfg['filters'])))
-            cnns.append(("{}-act".format(x), activations[cnn_cfg['activation']](*cnn_cfg['activation_params'])),)
-        return nn.Sequential(OrderedDict(cnns))
 
     def _get_rnn_input_size(self, sample_rate, window_size):
         """
@@ -185,24 +169,12 @@ class DeepSpeechOptim(SpeechModel):
         """
 
         # transpose to be of shape (batch_size, num_channels [1], height, width) and do CNN feature extraction
-        x = self.conv(x.transpose(0,1))
+        x = self.encoder(x.squeeze(0))
+        x = self.decoder(x.transpose(1,2))
+        #output_lengths = self.get_seq_lens(lengths)
 
-        # collapse cnn channels into a feature vector per timestep
-        sizes = x.size()
-        x = x.view(sizes[0], sizes[1] * sizes[2], sizes[3])  # Collapse feature dimension
-        x = x.transpose(1, 2).transpose(0, 1).contiguous()  # TxNxH
-
-        # calculate number of timesteps and run through RNN
-        output_lengths = self.get_seq_lens(lengths)
-        x, _ = self.rnn(x, output_lengths)
-
-        # fully connected layer to output classes
-        x = self.output(x)
-
-        # if training, return only logits (ctc loss calculates softmax), otherwise do softmax
-        x = self.inference_softmax(x, dim=2)
-        del lengths, sizes
-        return x, output_lengths
+        #del lengths
+        return self.inference_softmax(x.permute(1, 0, 2), dim=2)#, output_lengths
 
     def get_filter_images(self):
         """

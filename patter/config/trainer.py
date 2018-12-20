@@ -30,6 +30,7 @@ class TrainingSettings(Schema):
 class TrainerConfiguration(Schema):
     expt_id = fields.String(required=True, load_from="id")
     cuda = fields.Boolean(default=True)
+    fp16 = fields.Boolean(default=False)
 
     output = fields.Nested(TrainerOutputConfiguration)
     trainer = fields.Nested(TrainingSettings)
