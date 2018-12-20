@@ -25,7 +25,7 @@ class Evaluator(object):
         if self.cuda:
             model = torch.nn.DataParallel(model.cuda(), dim=1)
 
-        decoder = DecoderFactory.create(self.cfg['decoder'], model.module.labels)
+        decoder = DecoderFactory.create(self.cfg['decoder'], model.module.labels, blank_index=model.module.blank_index)
         return validate(test_loader, model, decoder=decoder, tqdm=self.tqdm, verbose=self.verbose)
 
     @classmethod

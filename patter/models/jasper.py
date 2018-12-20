@@ -67,7 +67,7 @@ class Jasper(SpeechModel):
         self.loss_func = None
 
         # Add a `\u00a0` (no break space) label as a "BLANK" symbol for CTC
-        self.labels = cfg['labels']['labels'] + ['\u00a0']
+        self.labels = cfg['labels']['labels'] + [SpeechModel.BLANK_CHAR]
         self.blank_index = len(self.labels) - 1
 
         activation = activations[cfg['encoder']['activation']](*cfg['encoder']['activation_params'])
@@ -127,9 +127,10 @@ class Jasper(SpeechModel):
         :return: 1D Tensor scaled by model
         """
         seq_len = input_length.squeeze(0)
-        for m in self.conv:
-            if type(m) == nn.modules.conv.Conv2d:
-                seq_len = ((seq_len + 2 * m.padding[1] - m.dilation[1] * (m.kernel_size[1] - 1) - 1) / m.stride[1] + 1)
+        for b in self.encoder:
+            for m in b.conv:
+                if type(m) == nn.modules.conv.Conv1d:
+                    seq_len = ((seq_len + 2 * m.padding[0] - m.dilation[0] * (m.kernel_size[0] - 1) - 1) / m.stride[0] + 1)
         return seq_len.int().unsqueeze(0)
     #
     # def get_output_offset_time_in_ms(self, offsets):
@@ -171,10 +172,10 @@ class Jasper(SpeechModel):
         # transpose to be of shape (batch_size, num_channels [1], height, width) and do CNN feature extraction
         x = self.encoder(x.squeeze(0))
         x = self.decoder(x.transpose(1,2))
-        #output_lengths = self.get_seq_lens(lengths)
+        output_lengths = self.get_seq_lens(lengths)
 
         #del lengths
-        return self.inference_softmax(x.permute(1, 0, 2), dim=2)#, output_lengths
+        return self.inference_softmax(x.permute(1, 0, 2), dim=2), output_lengths
 
     def get_filter_images(self):
         """

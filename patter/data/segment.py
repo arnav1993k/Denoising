@@ -101,6 +101,9 @@ class AudioSegment(object):
 
     def gain_db(self, gain):
         self._samples *= 10. ** (gain / 20.)
+    
+    def pad(self, pad_size):
+        self._samples = np.pad(self._samples, (0, pad_size), mode='constant')
 
     def subsegment(self, start_time=None, end_time=None):
         """Cut the AudioSegment between given boundaries.

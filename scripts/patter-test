@@ -30,7 +30,7 @@ def main():
     evaluator = Evaluator.load(testing_config, tqdm=args.progress, verbose=args.verbose)
 
     # load the corpora
-    test_corpus = AudioDataset.from_config(testing_config, model.input_cfg, model.labels, manifest="test")
+    test_corpus = AudioDataset.from_config(testing_config, model.input_cfg, model.labels, manifest="test", blank_index=model.blank_index)
 
     # kick off the test
     errors = evaluator.eval(model, test_corpus)

@@ -2,6 +2,7 @@ import torch.nn as nn
 
 
 class SpeechModel(nn.Module):
+    BLANK_CHAR = '\u00a0'
     def __init__(self, cfg):
         super(SpeechModel, self).__init__()
         self._config = cfg

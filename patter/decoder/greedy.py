@@ -28,6 +28,7 @@ class GreedyCTCDecoder(Decoder):
     def process_string(self, sequence, size, remove_repetitions=False):
         string = ''
         offsets = []
+
         for i in range(size):
             char = self.int_to_char[sequence[i].item()]
             if char != self.int_to_char[self.blank_index]:

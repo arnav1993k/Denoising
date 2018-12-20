@@ -14,7 +14,7 @@ class BeamCTCDecoder(Decoder):
                                        num_processes, blank_index)
 
     @classmethod
-    def from_config(cls, cfg, labels):
+    def from_config(cls, cfg, labels, blank_index=0):
         beam_cfg = {
             "cutoff_top_n": cfg['beam_config']['cutoff_top_n'],
             "cutoff_prob": cfg['beam_config']['cutoff_prob'],
@@ -25,7 +25,7 @@ class BeamCTCDecoder(Decoder):
             beam_cfg["lm_path"] = cfg['beam_config']['lm']['lm_path']
             beam_cfg["alpha"] = cfg['beam_config']['lm']['alpha']
             beam_cfg["beta"] = beta=cfg['beam_config']['lm']['beta']
-        return cls(labels, **beam_cfg)
+        return cls(labels, blank_index=blank_index, **beam_cfg)
 
     def convert_to_strings(self, out, seq_len):
         results = []

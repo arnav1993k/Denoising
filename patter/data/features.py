@@ -1,6 +1,7 @@
 import scipy
 import torch
 import librosa
+import math
 import python_speech_features as psf
 from .perturb import AudioAugmentor
 from .segment import AudioSegment
@@ -14,10 +15,11 @@ windows = {
 }
 
 class LogFilterbankFeaturizer(object):
-    def __init__(self, input_cfg, augmentor=None):
+    def __init__(self, input_cfg, augmentor=None, pad_to=8):
         self.augmentor = augmentor if augmentor is not None else AudioAugmentor()
         self.cfg = input_cfg
         self.window = windows.get(self.cfg['window'], None)
+        self.pad_to=pad_to
 
     def max_augmentation_length(self, length):
         return self.augmentor.max_augmentation_length(length)
@@ -29,7 +31,20 @@ class LogFilterbankFeaturizer(object):
     def process_segment(self, audio_segment):
         self.augmentor.perturb(audio_segment)
 
-        n_fft = self.cfg['n_fft'] if self.cfg['n_fft'] is not None else int(self.cfg['sample_rate'] * self.cfg['window_size'])
+        n_window_size = int(self.cfg['sample_rate'] * self.cfg['window_size'])
+        n_window_stride = int(self.cfg['sample_rate'] * self.cfg['window_stride'])
+
+
+        # make sure length of audio is divisible by 8 (fp16 optimization)
+        length = 1 + int(math.ceil(
+            (1.0 * audio_segment.samples.shape[0] - n_window_size) / n_window_stride
+        ))
+        if self.pad_to > 0:
+            if length % self.pad_to != 0:
+                pad_size = (self.pad_to - length % self.pad_to) * n_window_stride
+                audio_segment.pad(pad_size)
+
+        n_fft = self.cfg['n_fft'] if self.cfg['n_fft'] is not None else n_window_size
 
         feats = psf.logfbank(signal=audio_segment.samples, samplerate=self.cfg['sample_rate'], winlen=self.cfg['window_size'],
                              winstep=self.cfg['window_stride'], nfilt=self.cfg['features'], nfft=n_fft, lowfreq=0,
@@ -40,7 +55,7 @@ class LogFilterbankFeaturizer(object):
             std = spect.std()
             spect.add_(-mean)
             spect.div_(std)
-        return spect
+        return spect.transpose(0, 1)
 
     @classmethod
     def from_config(cls, input_config, perturbation_configs=None):

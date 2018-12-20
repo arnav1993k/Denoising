@@ -57,7 +57,7 @@ class BucketingSampler(Sampler):
 
 
 class AudioDataset(Dataset):
-    def __init__(self, manifest_filepath, labels, featurizer, max_duration=None, min_duration=None):
+    def __init__(self, manifest_filepath, labels, featurizer, max_duration=None, min_duration=None, blank_index=0):
         """
         Dataset that loads tensors via a json file containing paths to audio files, transcripts, and durations
         (in seconds). Each new line is a different sample. Example below:
@@ -75,6 +75,7 @@ class AudioDataset(Dataset):
         print("Dataset loaded with {0:.2f} hours. Filtered {1:.2f} hours.".format(self.manifest.duration/3600,
                                                                                   self.manifest.filtered_duration/3600))
         self.labels_map = dict([(labels[i], i) for i in range(len(labels))])
+        self.blank_index = blank_index
         self.featurizer = featurizer
 
     def __getitem__(self, index):
@@ -99,11 +100,11 @@ class AudioDataset(Dataset):
     def parse_transcript(self, transcript_path):
         with open(transcript_path, 'r', encoding="utf-8") as transcript_file:
             transcript = transcript_file.read().replace('\n', '')
-        transcript = list(filter(None, [self.labels_map.get(x) for x in list(transcript)]))
+        transcript = list(filter(lambda x: x != self.blank_index, [self.labels_map.get(x) for x in list(transcript)]))
         return transcript
 
     @classmethod
-    def from_config(cls, corpus_config, feature_config, labels, manifest="train"):
+    def from_config(cls, corpus_config, feature_config, labels, manifest="train", blank_index=0):
         try:
             cfg = CorporaConfiguration().load(corpus_config)
             if len(cfg.errors) > 0:
@@ -122,4 +123,5 @@ class AudioDataset(Dataset):
 
         return cls(dataset['manifest'], labels, featurizer, 
                    max_duration=config['max_duration'],
-                   min_duration=config['min_duration'])
+                   min_duration=config['min_duration'],
+                   blank_index=blank_index)
