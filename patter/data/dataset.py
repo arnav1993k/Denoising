@@ -23,6 +23,7 @@ def audio_seq_collate_fn(batch):
     input_lengths = torch.IntTensor(minibatch_size)
     target_sizes = torch.IntTensor(minibatch_size)
     targets = []
+    paths = []
 
     # iterate over minibatch to fill in tensors appropriately
     for i, sample in enumerate(batch):
@@ -30,8 +31,9 @@ def audio_seq_collate_fn(batch):
         inputs[0][i].narrow(1, 0, sample[0].size(1)).copy_(sample[0])
         target_sizes[i] = len(sample[1])
         targets.extend(sample[1])
+        paths.append(sample[2])
     targets = torch.IntTensor(targets)
-    return inputs, targets, input_lengths.unsqueeze(0), target_sizes
+    return inputs, targets, input_lengths.unsqueeze(0), target_sizes, paths
 
 
 class BucketingSampler(Sampler):
@@ -82,7 +84,7 @@ class AudioDataset(Dataset):
         sample = self.manifest[index]
         features = self.featurizer.process(sample['audio_filepath'])
         transcript = self.parse_transcript(sample['text_filepath'])
-        return features, transcript
+        return features, transcript, sample['audio_filepath']
 
     def __len__(self):
         return len(self.manifest)

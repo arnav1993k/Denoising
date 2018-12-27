@@ -177,7 +177,7 @@ class Trainer(object):
             data_time.update(time.time() - end)
 
             # create variables
-            feat, target, feat_len, target_len = data
+            feat, target, feat_len, target_len, _ = data
             if self.cuda:
                 feat = feat.cuda(async=True)
 
