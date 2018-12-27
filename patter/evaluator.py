@@ -24,9 +24,9 @@ class Evaluator(object):
                                  pin_memory=self.cuda, batch_size=self.cfg['batch_size'])
 
         if self.cuda:
-            model = torch.nn.DataParallel(model.cuda(), dim=1)
+            model = model.cuda()
 
-        decoder = DecoderFactory.create(self.cfg['decoder'], model.module.labels, blank_index=model.module.blank_index)
+        decoder = DecoderFactory.create(self.cfg['decoder'], model.labels, blank_index=model.blank_index)
         return validate(test_loader, model, decoder=decoder, tqdm=self.tqdm, verbose=self.verbose, out_stream=self.out_stream)
 
     @classmethod
@@ -88,11 +88,11 @@ def validate_batch(i, data, model, decoder, target_decoder, verbose=False, losse
 
         # compute output
         output, output_len = model(feat, feat_len)
-        output_len = output_len.cpu().squeeze(0)
+        output_len = output_len.cpu()
 
         if losses is not None:
             mb_loss = loss_fn(output, target, output_len, target_len)
-            avg_loss = mb_loss.data.sum() / feat.size(0)  # average the loss by minibatch
+            avg_loss = mb_loss.detach().sum() / feat.size(0)  # average the loss by minibatch
             inf = math.inf
             if avg_loss == inf or avg_loss == -inf:
                 print("WARNING: received an inf loss, setting loss value to 0")
@@ -100,8 +100,8 @@ def validate_batch(i, data, model, decoder, target_decoder, verbose=False, losse
             losses.update(avg_loss, feat.size(0))
 
     # do the decode
-    decoded_output, _, _ = decoder.decode(output.transpose(0, 1).data, output_len.data)
-    target_strings = target_decoder.convert_to_strings(split_targets(target.data, target_len.data))
+    decoded_output, _, _ = decoder.decode(output, output_len)
+    target_strings = target_decoder.convert_to_strings(split_targets(target, target_len))
 
     example = (decoded_output[0][0], target_strings[0][0])
 

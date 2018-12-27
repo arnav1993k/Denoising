@@ -87,7 +87,7 @@ class Trainer(object):
             eval_loader = None
 
         if self.cuda:
-            model = torch.nn.DataParallel(model.cuda(), dim=1)
+            model = model.cuda()
 
         print(model)
 

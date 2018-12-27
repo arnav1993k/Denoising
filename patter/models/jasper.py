@@ -21,17 +21,33 @@ activations = {
     "swish": Swish
 }
 
+# def get_same_padding(size, kernel_size, stride, dilation):
+#     padding = ((size - 1) * (stride - 1) + dilation * (kernel_size - 1)) //2
+#     return padding
+
+def get_same_padding(kernel_size, stride, dilation):
+    if stride > 1 and dilation > 1:
+        raise ValueError("Only stride OR dilation may be greater than 1")
+    if dilation > 1:
+        return (dilation * (kernel_size))//2
+    return kernel_size // 2
+
 class JasperBlock(nn.Module):
-    def __init__(self, inplanes, planes, repeat=3, kernel_size=11, stride=1, dilation=1, padding=0, dropout=0.2, activation=None, residual=True):
+    def __init__(self, inplanes, planes, repeat=3, kernel_size=11, stride=1, dilation=1, padding='same', dropout=0.2, activation=None, residual=True):
         super(JasperBlock, self).__init__()
+
+        if padding != "same":
+            raise ValueError("currently only 'same' padding is supported")
+
+        padding_val = get_same_padding(kernel_size[0], stride[0], dilation[0])
 
         layers = []
         inplanes_loop = inplanes
         for _ in range(repeat - 1):
-            layers.extend(self._get_conv_bn_layer(inplanes_loop, planes, kernel_size=kernel_size, stride=stride, dilation=dilation, padding=kernel_size[0]//2))
+            layers.extend(self._get_conv_bn_layer(inplanes_loop, planes, kernel_size=kernel_size, stride=stride, dilation=dilation, padding=padding_val))
             layers.extend(self._get_act_dropout_layer(dropout=dropout, activation=activation))
             inplanes_loop = planes
-        layers.extend(self._get_conv_bn_layer(inplanes_loop, planes, kernel_size=kernel_size, stride=stride, dilation=dilation, padding=kernel_size[0]//2))
+        layers.extend(self._get_conv_bn_layer(inplanes_loop, planes, kernel_size=kernel_size, stride=stride, dilation=dilation, padding=padding_val))
         
         self.conv = nn.Sequential(*layers)
         self.res = nn.Sequential(*self._get_conv_bn_layer(inplanes, planes, kernel_size=1)) if residual else None
@@ -66,7 +82,6 @@ class Jasper(SpeechModel):
         super(Jasper, self).__init__(cfg)
         self.loss_func = None
 
-        # Add a `\u00a0` (no break space) label as a "BLANK" symbol for CTC
         self.labels = cfg['labels']['labels'] + [SpeechModel.BLANK_CHAR]
         self.blank_index = len(self.labels) - 1
 
@@ -126,12 +141,12 @@ class Jasper(SpeechModel):
         :param input_length: 1D Tensor
         :return: 1D Tensor scaled by model
         """
-        seq_len = input_length.squeeze(0)
+        seq_len = input_length
         for b in self.encoder:
             for m in b.conv:
                 if type(m) == nn.modules.conv.Conv1d:
                     seq_len = ((seq_len + 2 * m.padding[0] - m.dilation[0] * (m.kernel_size[0] - 1) - 1) / m.stride[0] + 1)
-        return seq_len.int().unsqueeze(0)
+        return seq_len.int()
     #
     # def get_output_offset_time_in_ms(self, offsets):
     #     seq_len = 0
@@ -140,23 +155,7 @@ class Jasper(SpeechModel):
     #             seq_len = ((seq_len + 2 * m.padding[1] - m.dilation[1] * (m.kernel_size[1] - 1) - 1) / m.stride[1] + 1)
     #     offsets = (1/seq_len) * offsets *
 
-    def _get_rnn_input_size(self, sample_rate, window_size):
-        """
-        Calculate the size of tensor generated for a single timestep by the convolutional network
-        :param sample_rate: number of samples per second
-        :param window_size: size of windows as a fraction of a second
-        :return: Size of hidden state
-        """
-        size = int(math.floor((sample_rate * window_size) / 2) + 1)
-        channels = 0
-        for mod in self.conv:
-            if type(mod) == nn.modules.conv.Conv2d:
-                size = math.floor(
-                    (size + 2 * mod.padding[0] - mod.dilation[0] * (mod.kernel_size[0] - 1) - 1) / mod.stride[0] + 1)
-                channels = mod.out_channels
-        return size * channels
-
-    def forward(self, x, lengths):
+    def forward(self, x, lengths=None):
         """
         Perform a forward pass through the DeepSpeech model. Inputs are a batched spectrogram Variable and a Variable
         that indicates the sequence lengths of each example.
@@ -164,18 +163,16 @@ class Jasper(SpeechModel):
         The output (in inference mode) is a Variable containing posteriors over each character class at each timestep
         for each example in the minibatch.
 
-        :param x: (1, batch_size, stft_size, max_seq_len) Raw single-channel spectrogram input
+        :param x: (batch_size, stft_size, max_seq_len) Raw single-channel spectrogram input
         :param lengths: (batch,) Sequence_length for each sample in batch
-        :return: FloatTensor(max_seq_len, batch_size, num_classes), IntTensor(batch_size)
+        :return: FloatTensor(batch_size, max_seq_len, num_classes), IntTensor(batch_size)
         """
 
-        # transpose to be of shape (batch_size, num_channels [1], height, width) and do CNN feature extraction
-        x = self.encoder(x.squeeze(0))
+        x = self.encoder(x)
         x = self.decoder(x.transpose(1,2))
         output_lengths = self.get_seq_lens(lengths)
 
-        #del lengths
-        return self.inference_softmax(x.permute(1, 0, 2), dim=2), output_lengths
+        return self.inference_softmax(x, dim=2), output_lengths
 
     def get_filter_images(self):
         """
@@ -184,7 +181,7 @@ class Jasper(SpeechModel):
         """
         images = []
         x = 0
-        for mod in self.conv:
+        for mod in self.encoder:
             if type(mod) == nn.modules.conv.Conv2d:
                 orig_shape = mod.weight.data.shape
                 weights = mod.weight.data.view(
