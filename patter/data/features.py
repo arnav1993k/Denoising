@@ -107,7 +107,8 @@ class LogSpectrogramFeaturizer(object):
 class FeaturizerFactory(object):
     featurizers = {
         "logfbank": LogFilterbankFeaturizer,
-        "logspect": LogSpectrogramFeaturizer
+        "logspect": LogSpectrogramFeaturizer,
+        "stft": LogSpectrogramFeaturizer,
     }
 
     def __init__(self):

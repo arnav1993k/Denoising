@@ -121,18 +121,11 @@ class DeepSpeechOptim(SpeechModel):
         :param input_length: 1D Tensor
         :return: 1D Tensor scaled by model
         """
-        seq_len = input_length.squeeze(0)
+        seq_len = input_length
         for m in self.conv:
             if type(m) == nn.modules.conv.Conv2d:
                 seq_len = ((seq_len + 2 * m.padding[1] - m.dilation[1] * (m.kernel_size[1] - 1) - 1) / m.stride[1] + 1)
-        return seq_len.int().unsqueeze(0)
-    #
-    # def get_output_offset_time_in_ms(self, offsets):
-    #     seq_len = 0
-    #     for m in self.conv:
-    #         if type(m) == nn.modules.conv.Conv2d:
-    #             seq_len = ((seq_len + 2 * m.padding[1] - m.dilation[1] * (m.kernel_size[1] - 1) - 1) / m.stride[1] + 1)
-    #     offsets = (1/seq_len) * offsets *
+        return seq_len.int()
 
     @staticmethod
     def _get_cnn_layers(cfg):
@@ -179,18 +172,17 @@ class DeepSpeechOptim(SpeechModel):
         The output (in inference mode) is a Variable containing posteriors over each character class at each timestep
         for each example in the minibatch.
 
-        :param x: (1, batch_size, stft_size, max_seq_len) Raw single-channel spectrogram input
+        :param x: (batch_size, stft_size, max_seq_len) Raw single-channel spectrogram input
         :param lengths: (batch,) Sequence_length for each sample in batch
-        :return: FloatTensor(max_seq_len, batch_size, num_classes), IntTensor(batch_size)
+        :return: FloatTensor(batch_size, max_seq_len, num_classes), IntTensor(batch_size)
         """
 
-        # transpose to be of shape (batch_size, num_channels [1], height, width) and do CNN feature extraction
-        x = self.conv(x.transpose(0,1))
+        # do CNN feature extraction
+        x = self.conv(x.unsqueeze(1))
 
         # collapse cnn channels into a feature vector per timestep
         sizes = x.size()
-        x = x.view(sizes[0], sizes[1] * sizes[2], sizes[3])  # Collapse feature dimension
-        x = x.transpose(1, 2).transpose(0, 1).contiguous()  # TxNxH
+        x = x.view(sizes[0], sizes[1] * sizes[2], sizes[3]).permute(2, 0, 1).contiguous()
 
         # calculate number of timesteps and run through RNN
         output_lengths = self.get_seq_lens(lengths)
@@ -201,8 +193,8 @@ class DeepSpeechOptim(SpeechModel):
 
         # if training, return only logits (ctc loss calculates softmax), otherwise do softmax
         x = self.inference_softmax(x, dim=2)
-        del lengths, sizes
-        return x, output_lengths
+        del sizes
+        return x.permute(1, 0, 2), output_lengths
 
     def get_filter_images(self):
         """

@@ -21,10 +21,6 @@ activations = {
     "swish": Swish
 }
 
-# def get_same_padding(size, kernel_size, stride, dilation):
-#     padding = ((size - 1) * (stride - 1) + dilation * (kernel_size - 1)) //2
-#     return padding
-
 def get_same_padding(kernel_size, stride, dilation):
     if stride > 1 and dilation > 1:
         raise ValueError("Only stride OR dilation may be greater than 1")
@@ -147,13 +143,6 @@ class Jasper(SpeechModel):
                 if type(m) == nn.modules.conv.Conv1d:
                     seq_len = ((seq_len + 2 * m.padding[0] - m.dilation[0] * (m.kernel_size[0] - 1) - 1) / m.stride[0] + 1)
         return seq_len.int()
-    #
-    # def get_output_offset_time_in_ms(self, offsets):
-    #     seq_len = 0
-    #     for m in self.conv:
-    #         if type(m) == nn.modules.conv.Conv2d:
-    #             seq_len = ((seq_len + 2 * m.padding[1] - m.dilation[1] * (m.kernel_size[1] - 1) - 1) / m.stride[1] + 1)
-    #     offsets = (1/seq_len) * offsets *
 
     def forward(self, x, lengths=None):
         """
@@ -169,7 +158,7 @@ class Jasper(SpeechModel):
         """
 
         x = self.encoder(x)
-        x = self.decoder(x.transpose(1,2))
+        x = self.decoder(x.transpose(1, 2))
         output_lengths = self.get_seq_lens(lengths)
 
         return self.inference_softmax(x, dim=2), output_lengths
