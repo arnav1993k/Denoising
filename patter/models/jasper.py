@@ -1,12 +1,8 @@
-import math
 import torch.nn as nn
-import torchvision.utils as vutils
 
 from apex import amp
 
-from collections import OrderedDict
 from patter.models.model import SpeechModel
-from patter.layers import NoiseRNN, DeepBatchRNN, LookaheadConvolution, SequenceWise
 from .activation import InferenceBatchSoftmax, Swish
 
 try:
@@ -91,9 +87,8 @@ class Jasper(SpeechModel):
                                               dilation=lcfg['dilation'], dropout=lcfg['dropout'], 
                                               residual=lcfg['residual'], activation=activation))
             feat_in = lcfg['filters']
-        
+        encoder_layers.append(nn.Conv1d(feat_in, len(self.labels), kernel_size=1))
         self.encoder = nn.Sequential(*encoder_layers)
-        self.decoder = nn.Linear(feat_in, len(self.labels))
 
         # and output activation (softmax) ONLY at inference time (CTC applies softmax during training)
         self.inference_softmax = InferenceBatchSoftmax()
@@ -139,9 +134,12 @@ class Jasper(SpeechModel):
         """
         seq_len = input_length
         for b in self.encoder:
-            for m in b.conv:
-                if type(m) == nn.modules.conv.Conv1d:
-                    seq_len = ((seq_len + 2 * m.padding[0] - m.dilation[0] * (m.kernel_size[0] - 1) - 1) / m.stride[0] + 1)
+            try:
+                for m in b.conv:
+                    if type(m) == nn.modules.conv.Conv1d:
+                        seq_len = ((seq_len + 2 * m.padding[0] - m.dilation[0] * (m.kernel_size[0] - 1) - 1) / m.stride[0] + 1)
+            except Exception:
+                pass
         return seq_len.int()
 
     def forward(self, x, lengths=None):
@@ -157,8 +155,7 @@ class Jasper(SpeechModel):
         :return: FloatTensor(batch_size, max_seq_len, num_classes), IntTensor(batch_size)
         """
 
-        x = self.encoder(x)
-        x = self.decoder(x.transpose(1, 2))
+        x = self.encoder(x).transpose(1, 2)
         output_lengths = self.get_seq_lens(lengths)
 
         return self.inference_softmax(x, dim=2), output_lengths
@@ -169,14 +166,4 @@ class Jasper(SpeechModel):
         :return: list of images
         """
         images = []
-        x = 0
-        for mod in self.encoder:
-            if type(mod) == nn.modules.conv.Conv2d:
-                orig_shape = mod.weight.data.shape
-                weights = mod.weight.data.view(
-                    [orig_shape[0] * orig_shape[1], orig_shape[2], orig_shape[3]]).unsqueeze(1)
-                rows = 2 ** math.ceil(math.sqrt(math.sqrt(weights.shape[0])))
-                images.append(("CNN.{}".format(x),
-                               vutils.make_grid(weights, nrow=rows, padding=1, normalize=True, scale_each=True)))
-            x += 1
         return images
