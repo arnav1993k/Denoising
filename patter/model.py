@@ -2,13 +2,15 @@ import torch
 from marshmallow.exceptions import ValidationError
 from .models.deepspeech import DeepSpeechOptim
 from .models.jasper import Jasper
+from .models.jasper_dr import JasperDR
 from .config import SpeechModelConfiguration
 
 
 class ModelFactory(object):
     _models = {
         "DeepSpeechOptim": DeepSpeechOptim,
-        "Jasper": Jasper
+        "Jasper": Jasper,
+        "JasperDR": JasperDR,
     }
 
     @classmethod

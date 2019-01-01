@@ -27,7 +27,8 @@ class JasperConfiguration(Schema):
     stride = fields.List(fields.Integer, default=[1], validate=Length(equal=1))
     dilation = fields.List(fields.Integer, default=[1], validate=Length(equal=1))
     dropout = fields.Float(default=0.0, missing=None)
-    residual = fields.Boolean(default=False)
+    residual = fields.Boolean(default=False, missing=False)
+    residual_dense = fields.Boolean(default=False, missing=False)
 
 
 class CNNConfiguration(Schema):
