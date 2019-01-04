@@ -2,6 +2,7 @@ import scipy
 import torch
 import librosa
 import math
+import numpy as np
 import python_speech_features as psf
 from .perturb import AudioAugmentor
 from .segment import AudioSegment
@@ -13,6 +14,12 @@ windows = {
     'bartlett': scipy.signal.bartlett,
     'none': None,
 }
+
+def normalize_signal(signal):
+  """
+  Normalize float32 signal to [-1, 1] range
+  """
+  return signal / np.max(np.abs(signal))
 
 class LogFilterbankFeaturizer(object):
     def __init__(self, input_cfg, augmentor=None, pad_to=8):
@@ -30,6 +37,7 @@ class LogFilterbankFeaturizer(object):
 
     def process_segment(self, audio_segment):
         self.augmentor.perturb(audio_segment)
+        audio_segment._samples = (normalize_signal(audio_segment._samples.astype(np.float32)) * 32767.0).astype(np.int16)
 
         n_window_size = int(self.cfg['sample_rate'] * self.cfg['window_size'])
         n_window_stride = int(self.cfg['sample_rate'] * self.cfg['window_stride'])
