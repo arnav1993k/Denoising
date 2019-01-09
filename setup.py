@@ -13,7 +13,6 @@ packages = ["patter", "patter.config", "patter.decoder", "patter.models", "patte
 scripts = [
     script_root / "patter-train",
     script_root / "patter-test",
-    script_root / "patter-serve",
     script_root / "patter-client",
     script_root / "patter-model",
     script_root / "patter-convert"
