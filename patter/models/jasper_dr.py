@@ -60,6 +60,19 @@ class JasperBlock(nn.Module):
             nn.BatchNorm1d(planes)
         ]
         return layers
+
+    def init_weights(self):
+        for x in self.conv:
+            if isinstance(x, nn.Conv1d):
+                nn.init.xavier_normal_(x.weight)
+            elif isinstance(x, nn.BatchNorm1d):
+                x.reset_parameters()
+        if self.res:
+            for x in self.res:
+                if isinstance(x, nn.Conv1d):
+                    nn.init.xavier_normal_(x.weight)
+                elif isinstance(x, nn.BatchNorm1d):
+                    x.reset_parameters()
     
     def _get_act_dropout_layer(self, dropout=0.2, activation=None):
         if activation is None:
@@ -116,7 +129,7 @@ class JasperDR(SpeechModel):
         :return:
         """
         if mode and self.loss_func is None:
-            self.loss_func = CTCLoss(size_average=False)
+            self.loss_func = CTCLoss(size_average=True)
         super().train(mode=mode)
 
     @amp.float_function
@@ -131,10 +144,12 @@ class JasperDR(SpeechModel):
         """
         if self.loss_func is None:
             self.train()
-        return self.loss_func(x, y, x_length, y_length)
+        return self.loss_func(x.transpose(0,1), y, x_length, y_length)
 
     def init_weights(self):
-        pass
+        for x in self.encoder:
+            x.init_weights()
+        nn.init.xavier_normal_(self.decoder.weight)
 
     def flatten_parameters(self):
         pass

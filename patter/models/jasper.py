@@ -116,7 +116,7 @@ class Jasper(SpeechModel):
         """
         if self.loss_func is None:
             self.train()
-        return self.loss_func(x, y, x_length, y_length)
+        return self.loss_func(x.transpose(0,1), y, x_length, y_length)
 
     def init_weights(self):
         pass

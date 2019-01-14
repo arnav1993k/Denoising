@@ -12,6 +12,7 @@ from patter.models import SpeechModel
 from patter.evaluator import validate
 
 from apex import amp
+from apex.parallel.LARC import LARC
 
 optimizers = {
     "sgd": torch.optim.SGD,
@@ -35,7 +36,7 @@ class Trainer(object):
         self.train_id = train_config['expt_id']
         self.tqdm = tqdm
         self.max_norm = self.cfg.get('max_norm', None)
-        self.logger = TensorboardLogger(train_config['expt_id'], self.output['log_path'], include_grad=True)
+        self.logger = TensorboardLogger(train_config['expt_id'], self.output['log_path'], include_grad=False)
         self.fp16 = train_config['fp16']
         self.amp = amp.init(enabled=self.fp16)
         if self.fp16:
@@ -58,7 +59,7 @@ class Trainer(object):
         # self.logger.add_graph(model, (feat, feat_len))
         optimizer.zero_grad()
         output, output_len = model(feat, feat_len)
-        loss = model.module.loss(output, target, output_len.cpu().squeeze(0), target_len)
+        loss = model.loss(output, target, output_len.cpu(), target_len)
         with self.amp.scale_loss(loss, optimizer) as scaled_loss:
             scaled_loss.backward()
         optimizer.step()
@@ -96,9 +97,6 @@ class Trainer(object):
         optim_class = optimizers.get(opt_cfg['optimizer'])
         del opt_cfg['optimizer']
         optimizer = optim_class(model.parameters(), **opt_cfg)
-        print("Configured with optimizer:", optimizer)
-        # memoize initial optimizer state so we can reset it after warmup
-        optim_state_dict = optimizer.state_dict()
 
         # set up a learning rate scheduler if requested -- currently only StepLR supported
         if "scheduler" in self.cfg:
@@ -107,6 +105,15 @@ class Trainer(object):
         else:
             scheduler = NoOpScheduler()
 
+        larc_cfg = self.cfg['larc']
+        larc_enabled = False
+        if larc_cfg is not None and larc_cfg['enabled']:
+            optimizer = LARC(optimizer, trust_coefficient=larc_cfg['coeff'], clip=larc_cfg['clip'], eps=larc_cfg['eps'])
+            larc_enabled = True
+        print("Configured with {}optimizer:".format("LARC " if larc_enabled else ""), optimizer)
+        # memoize initial optimizer state so we can reset it after warmup
+        optim_state_dict = optimizer.state_dict()
+
         # warm up gpu memory cache by doing a fwd/bwd, validation, and resetting model
         print("Starting warmup...")
         self.warmup(model, corpus, optimizer)
@@ -114,7 +121,8 @@ class Trainer(object):
         self.logger.log_epoch(0, 500, err.wer, err.cer, 500)
         # initialize model and optimizer properly for real training
         optimizer.load_state_dict(optim_state_dict)
-        model.module.init_weights()
+
+        model.init_weights()
         del optim_state_dict
         torch.cuda.synchronize()
         print("Warmup complete.")
@@ -125,12 +133,14 @@ class Trainer(object):
         wers, cers, losses = [], [], []
         for epoch in range(self.cfg['epochs']):
             # shuffle the input data if required
-            if epoch > 0:
+            if epoch > 0 or not self.cfg['sortagrad']:
                 train_sampler.shuffle()
+            else:
+                print("Sortagrad enabled. Skipping shuffle...")
 
             # adjust lr
             scheduler.step()
-            # print("> Learning rate annealed to {0:.6f}".format(scheduler.get_lr()[0]))
+            print("> Learning rate annealed to {0:.6f}".format(scheduler.get_lr()[0]))
             
             avg_loss = self.train_epoch(model, train_loader, optimizer, epoch)
             print("Epoch {} Summary:".format(epoch+1))
@@ -142,14 +152,14 @@ class Trainer(object):
 
             # log the result of the epoch
             wers.append(err.wer), cers.append(err.cer), losses.append(avg_loss)
-            self.logger.log_epoch(epoch+1, avg_loss, err.wer, err.cer, val_loss, model=model)
-            self.logger.log_images(epoch+1, model.module.get_filter_images())
+            self.logger.log_epoch(epoch+1, avg_loss, err.wer, err.cer, val_loss, model=None) #TODO: add back model
+            self.logger.log_images(epoch+1, model.get_filter_images())
             self.logger.log_sample_decodes(epoch+1, sample_decodes)
 
             if err.wer < best_wer:
                 best_wer = err.wer
                 print("Better model found. Saving.")
-                torch.save(SpeechModel.serialize(model.module, optimizer=optimizer, epoch=epoch, loss_results=losses,
+                torch.save(SpeechModel.serialize(model, optimizer=optimizer, epoch=epoch, loss_results=losses,
                                                  cer_results=cers, wer_results=wers), self.output['model_path'])
 
     def train_epoch(self, model, train_loader, optimizer, epoch):
@@ -187,12 +197,12 @@ class Trainer(object):
             # feat is (batch, 1,  feat_dim,  seq_len)
             # output is (seq_len, batch, output_dim)
             output, output_len = model(feat, feat_len)
-            loss = model.module.loss(output, target, output_len.cpu().squeeze(0), target_len)
+            loss = model.loss(output, target, output_len.cpu(), target_len)
 
             # munge the loss
-            scalar_loss = loss.item()/feat.size(0)
+            scalar_loss = loss.item()
             if abs(scalar_loss) == math.inf:
-                print("WARNING: received an inf loss, setting loss value to 0")
+                #print("WARNING: received an inf loss, setting loss value to 0")
                 scalar_loss = 0
             self.logger.log_step(epoch*len(train_loader) + i, scalar_loss)
             losses.update(scalar_loss, feat.size(0))
@@ -225,7 +235,7 @@ class Trainer(object):
                 loader.set_postfix(loss=losses.val)
 
             if self.output['checkpoint_interval'] > 0 and (i % self.output['checkpoint_interval']) == 0:
-                torch.save(SpeechModel.serialize(model.module, optimizer=optimizer, epoch=epoch, iteration=i), self.output['model_path']+".ckpt")
+                torch.save(SpeechModel.serialize(model, optimizer=optimizer, epoch=epoch, iteration=i), self.output['model_path']+".ckpt")
         return losses.avg
 
     @classmethod

@@ -50,7 +50,7 @@ class DeepBatchRNN(nn.Module):
 
     def forward(self, x, lengths):
         max_seq_length = x.size(0)
-        x = nn.utils.rnn.pack_padded_sequence(x, lengths.data.squeeze(0).cpu().numpy())
+        x = nn.utils.rnn.pack_padded_sequence(x, lengths.cpu().numpy())
         x = self.rnns(x)
         x, _ = nn.utils.rnn.pad_packed_sequence(x, total_length=max_seq_length)
         return x, None

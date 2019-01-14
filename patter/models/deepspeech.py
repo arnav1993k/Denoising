@@ -1,4 +1,5 @@
 import math
+import torch
 import torch.nn as nn
 import torchvision.utils as vutils
 
@@ -85,7 +86,7 @@ class DeepSpeechOptim(SpeechModel):
         """
         if self.loss_func is None:
             self.train()
-        return self.loss_func(x, y, x_length, y_length)
+        return self.loss_func(x.transpose(0,1), y, x_length, y_length)
 
     def init_weights(self):
         """
@@ -102,7 +103,14 @@ class DeepSpeechOptim(SpeechModel):
         for t in w:
             nn.init.xavier_uniform_(t[1])
         for t in hh:
-            nn.init.orthogonal_(t[1])
+            fp16=False
+            param = t[1]
+            if param.dtype == torch.half:
+                fp16 = True
+                param = param.float()
+            nn.init.orthogonal_(param)
+            if fp16:
+                param = param.half()
         for t in b:
             nn.init.constant_(t[1], 0)
 

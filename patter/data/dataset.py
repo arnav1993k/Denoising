@@ -20,7 +20,7 @@ def audio_seq_collate_fn(batch):
 
     # init tensors we need to return
     inputs = torch.zeros(minibatch_size, batch[0][0].size(0), batch[0][0].size(1))
-    input_lengths = torch.IntTensor(minibatch_size)
+    input_lengths = torch.LongTensor(minibatch_size)
     target_sizes = torch.IntTensor(minibatch_size)
     targets = []
     paths = []
@@ -94,10 +94,10 @@ class AudioDataset(Dataset):
         freq_size = longest_sample.size(0)
         max_seqlength = longest_sample.size(1)
         targets = torch.IntTensor(max_seqlength*minibatch_size)
-        feats = torch.zeros(1, minibatch_size, freq_size, max_seqlength)
-        input_lengths = torch.IntTensor(1, minibatch_size)
+        feats = torch.zeros(minibatch_size, freq_size, max_seqlength)
+        input_lengths = torch.IntTensor(minibatch_size)
         input_lengths.fill_(max_seqlength)
-        return feats, targets, input_lengths, input_lengths.squeeze(0)
+        return feats, targets, input_lengths, input_lengths
 
     def parse_transcript(self, transcript_path):
         with open(transcript_path, 'r', encoding="utf-8") as transcript_file:
