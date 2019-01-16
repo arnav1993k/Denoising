@@ -1,20 +1,13 @@
 import math
 import torch
 import torch.nn as nn
-import torchvision.utils as vutils
 
 from apex import amp
 
 from collections import OrderedDict
 from patter.models.model import SpeechModel
 from patter.layers import NoiseRNN, DeepBatchRNN, LookaheadConvolution, SequenceWise
-from .activation import InferenceBatchSoftmax, Swish
-
-try:
-    from warpctc_pytorch import CTCLoss
-except ImportError:
-    print("WARN: CTCLoss not imported. Use only for inference.")
-    CTCLoss = lambda x, y: 0
+from .activation import Swish
 
 activations = {
     "hardtanh": nn.Hardtanh,
@@ -58,10 +51,10 @@ class DeepSpeechOptim(SpeechModel):
         if cfg['rnn']['batch_norm']:
             output.append(SequenceWise(nn.BatchNorm1d(cfg['rnn']['size'])))
         output.append(nn.Linear(cfg['rnn']['size'], len(self.labels), bias=False))
+        output.append(nn.LogSoftmax(dim=2))
         self.output = nn.Sequential(*output)
 
         # and output activation (softmax) ONLY at inference time (CTC applies softmax during training)
-        self.inference_softmax = InferenceBatchSoftmax()
         self.init_weights()
 
     def train(self, mode=True):
@@ -71,7 +64,7 @@ class DeepSpeechOptim(SpeechModel):
         :return:
         """
         if mode and self.loss_func is None:
-            self.loss_func = CTCLoss(size_average=False)
+            self.loss_func = nn.CTCLoss(blank=self.blank_index, reduction='sum')
         super().train(mode=mode)
 
     @amp.float_function
@@ -86,7 +79,7 @@ class DeepSpeechOptim(SpeechModel):
         """
         if self.loss_func is None:
             self.train()
-        return self.loss_func(x.transpose(0,1), y, x_length, y_length)
+        return self.loss_func(x.transpose(0,1), y, x_length.to(torch.long), y_length.to(torch.long))
 
     def init_weights(self):
         """
@@ -200,7 +193,6 @@ class DeepSpeechOptim(SpeechModel):
         x = self.output(x)
 
         # if training, return only logits (ctc loss calculates softmax), otherwise do softmax
-        x = self.inference_softmax(x, dim=2)
         del sizes
         return x.permute(1, 0, 2), output_lengths
 

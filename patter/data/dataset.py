@@ -93,10 +93,10 @@ class AudioDataset(Dataset):
         longest_sample = self.featurizer.max_augmentation_length(self[-1][0] + 20) # +20 gives some wiggle room
         freq_size = longest_sample.size(0)
         max_seqlength = longest_sample.size(1)
-        targets = torch.IntTensor(max_seqlength*minibatch_size)
+        targets = torch.IntTensor((max_seqlength//2)*minibatch_size)
         feats = torch.zeros(minibatch_size, freq_size, max_seqlength)
         input_lengths = torch.IntTensor(minibatch_size)
-        input_lengths.fill_(max_seqlength)
+        input_lengths.fill_(max_seqlength//2)
         return feats, targets, input_lengths, input_lengths
 
     def parse_transcript(self, transcript_path):

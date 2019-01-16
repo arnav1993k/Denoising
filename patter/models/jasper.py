@@ -1,15 +1,11 @@
+import torch
 import torch.nn as nn
 
 from apex import amp
 
 from patter.models.model import SpeechModel
-from .activation import InferenceBatchSoftmax, Swish
+from .activation import Swish
 
-try:
-    from warpctc_pytorch import CTCLoss
-except ImportError:
-    print("WARN: CTCLoss not imported. Use only for inference.")
-    CTCLoss = lambda x, y: 0
 
 activations = {
     "hardtanh": nn.Hardtanh,
@@ -17,15 +13,17 @@ activations = {
     "swish": Swish
 }
 
+
 def get_same_padding(kernel_size, stride, dilation):
     if stride > 1 and dilation > 1:
         raise ValueError("Only stride OR dilation may be greater than 1")
     if dilation > 1:
-        return (dilation * (kernel_size))//2
+        return (dilation * (kernel_size)) // 2 - 1
     return kernel_size // 2
 
+
 class JasperBlock(nn.Module):
-    def __init__(self, inplanes, planes, repeat=3, kernel_size=11, stride=1, dilation=1, padding='same', dropout=0.2, activation=None, residual=True):
+    def __init__(self, inplanes, planes, repeat=3, kernel_size=11, stride=1, dilation=1, padding='same', dropout=0.2, activation=None, residual=True, residual_panes=[]):
         super(JasperBlock, self).__init__()
 
         if padding != "same":
@@ -42,7 +40,16 @@ class JasperBlock(nn.Module):
         layers.extend(self._get_conv_bn_layer(inplanes_loop, planes, kernel_size=kernel_size, stride=stride, dilation=dilation, padding=padding_val))
         
         self.conv = nn.Sequential(*layers)
-        self.res = nn.Sequential(*self._get_conv_bn_layer(inplanes, planes, kernel_size=1)) if residual else None
+        self.res = None
+        res_panes = residual_panes.copy()
+        self.dense_residual = residual
+        if residual:
+            self.res = nn.ModuleList()
+            if len(residual_panes) == 0:
+                res_panes = [inplanes]
+                self.dense_residual = False
+            for ip in res_panes:
+                self.res.append(nn.Sequential(*self._get_conv_bn_layer(ip, planes, kernel_size=1)))
         self.out = nn.Sequential(*self._get_act_dropout_layer(dropout=dropout, activation=activation))
     
     def _get_conv_bn_layer(self, inplanes, planes, kernel_size=11, stride=1, dilation=1, padding=0):
@@ -51,6 +58,19 @@ class JasperBlock(nn.Module):
             nn.BatchNorm1d(planes)
         ]
         return layers
+
+    def init_weights(self):
+        for x in self.conv:
+            if isinstance(x, nn.Conv1d):
+                nn.init.xavier_normal_(x.weight)
+            elif isinstance(x, nn.BatchNorm1d):
+                x.reset_parameters()
+        if self.res:
+            for x in self.res:
+                if isinstance(x, nn.Conv1d):
+                    nn.init.xavier_normal_(x.weight)
+                elif isinstance(x, nn.BatchNorm1d):
+                    x.reset_parameters()
     
     def _get_act_dropout_layer(self, dropout=0.2, activation=None):
         if activation is None:
@@ -60,14 +80,17 @@ class JasperBlock(nn.Module):
             nn.Dropout(p=dropout)
         ]
         return layers
-    
-    def forward(self, x):
-        out = self.conv(x)
-        if self.res is not None:
-            out += self.res(x)
-        out = self.out(out)
 
-        return out
+    def forward(self, xs):
+        out = self.conv(xs[-1])
+        if self.res is not None:
+            for i in range(len(self.res)):
+                out += self.res[i](xs[i])
+        out = self.out(out)
+        if self.res is not None and self.dense_residual:
+            return xs + [out]
+        return [out]
+
 
 class Jasper(SpeechModel):
     def __init__(self, cfg):
@@ -80,18 +103,25 @@ class Jasper(SpeechModel):
         activation = activations[cfg['encoder']['activation']](*cfg['encoder']['activation_params'])
         feat_in = cfg['input']['features']
 
+        residual_panes = []
         encoder_layers = []
+        self.dense_residual = False
         for lcfg in cfg['jasper']:
+            dense_res = []
+            if lcfg['residual_dense']:
+                residual_panes.append(feat_in)
+                dense_res = residual_panes
+                self.dense_residual = True
             encoder_layers.append(JasperBlock(feat_in, lcfg['filters'], repeat=lcfg['repeat'], 
                                               kernel_size=lcfg['kernel'], stride=lcfg['stride'], 
                                               dilation=lcfg['dilation'], dropout=lcfg['dropout'], 
-                                              residual=lcfg['residual'], activation=activation))
+                                              residual=lcfg['residual'], activation=activation,
+                                              residual_panes=dense_res))
             feat_in = lcfg['filters']
-        encoder_layers.append(nn.Conv1d(feat_in, len(self.labels), kernel_size=1))
         self.encoder = nn.Sequential(*encoder_layers)
-
-        # and output activation (softmax) ONLY at inference time (CTC applies softmax during training)
-        self.inference_softmax = InferenceBatchSoftmax()
+        self.decoder = nn.Sequential(
+            nn.Conv1d(feat_in, len(self.labels), kernel_size=1),
+            nn.LogSoftmax(dim=1))
         self.init_weights()
 
     def train(self, mode=True):
@@ -101,7 +131,7 @@ class Jasper(SpeechModel):
         :return:
         """
         if mode and self.loss_func is None:
-            self.loss_func = CTCLoss(size_average=False)
+            self.loss_func = nn.CTCLoss(blank=self.blank_index, reduction='mean')
         super().train(mode=mode)
 
     @amp.float_function
@@ -116,10 +146,12 @@ class Jasper(SpeechModel):
         """
         if self.loss_func is None:
             self.train()
-        return self.loss_func(x.transpose(0,1), y, x_length, y_length)
+        return self.loss_func(x.transpose(0,1), y, x_length.to(torch.long), y_length.to(torch.long))
 
     def init_weights(self):
-        pass
+        for x in self.encoder:
+            x.init_weights()
+        nn.init.xavier_normal_(self.decoder[0].weight)
 
     def flatten_parameters(self):
         pass
@@ -155,10 +187,11 @@ class Jasper(SpeechModel):
         :return: FloatTensor(batch_size, max_seq_len, num_classes), IntTensor(batch_size)
         """
 
-        x = self.encoder(x).transpose(1, 2)
+        x = self.encoder([x])[-1]
+        x = self.decoder(x)
         output_lengths = self.get_seq_lens(lengths)
 
-        return self.inference_softmax(x, dim=2), output_lengths
+        return x.transpose(1,2), output_lengths
 
     def get_filter_images(self):
         """

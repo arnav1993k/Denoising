@@ -65,7 +65,6 @@ class BeamCTCDecoder(Decoder):
         Returns:
             string: sequences of the model's best guess for the transcription
         """
-        sizes = sizes.squeeze(0) if sizes is not None else None
         out, scores, offsets, seq_lens = self._decoder.decode(probs.cpu(), sizes)
 
         strings = self.convert_to_strings(out, seq_lens)
