@@ -28,6 +28,7 @@ def main():
     model = ModelFactory.load(args.model_path)
 
     # set up trainer and corpus
+    out_file = None
     if args.out_path is not None:
         out_file = open(args.out_path, "w")
     evaluator = Evaluator.load(testing_config, tqdm=args.progress, verbose=args.verbose, out_stream=out_file)
