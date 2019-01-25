@@ -4,12 +4,12 @@ except ImportError:
     from distutils.core import setup, Extension
 from pathlib import Path
 
-install_requirements = ["torch", "numpy", "python-levenshtein", "librosa", "SoundFile",
-                        "tqdm", 'toml', 'tensorboardX', 'marshmallow==2.15.1']
+install_requirements = ["numpy", "python-levenshtein", "librosa", "SoundFile",
+                        "tqdm", 'toml', 'tensorboardX', 'marshmallow==2.15.1', "python_speech_features"]
 test_requirements = ["nose"]
 
 script_root = Path("scripts")
-packages = ["patter", "patter.config", "patter.decoder", "patter.models", "patter.util"]
+packages = ["patter", "patter.config", "patter.data", "patter.decoder", "patter.layers", "patter.models", "patter.util"]
 scripts = [
     script_root / "patter-train",
     script_root / "patter-test",
