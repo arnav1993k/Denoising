@@ -14,6 +14,11 @@ activations = {
 }
 
 
+def inf_loss_to_zero_hook(self, grad_input, grad_output):
+    for g in grad_input:
+        g[g != g] = 0   # replace all nan/inf in gradients to zero
+
+
 def get_same_padding(kernel_size, stride, dilation):
     if stride > 1 and dilation > 1:
         raise ValueError("Only stride OR dilation may be greater than 1")
@@ -51,6 +56,7 @@ class JasperBlock(nn.Module):
             for ip in res_panes:
                 self.res.append(nn.Sequential(*self._get_conv_bn_layer(ip, planes, kernel_size=1)))
         self.out = nn.Sequential(*self._get_act_dropout_layer(dropout=dropout, activation=activation))
+        self.register_backward_hook(inf_loss_to_zero_hook) # NB: only needed until the pytorch ctc loss supports this
     
     def _get_conv_bn_layer(self, inplanes, planes, kernel_size=11, stride=1, dilation=1, padding=0):
         layers = [
