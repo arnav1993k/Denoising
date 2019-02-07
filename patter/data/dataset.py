@@ -32,6 +32,8 @@ def audio_seq_collate_fn(batch):
         target_sizes[i] = len(sample[1])
         targets.extend(sample[1])
         paths.append(sample[2])
+        if None in sample[1]:
+            print(sample[2])
     targets = torch.IntTensor(targets)
     return inputs, targets, input_lengths, target_sizes, paths
 
@@ -83,7 +85,8 @@ class AudioDataset(Dataset):
     def __getitem__(self, index):
         sample = self.manifest[index]
         features = self.featurizer.process(sample['audio_filepath'])
-        transcript = self.parse_transcript(sample['text_filepath'])
+        transcript_text = sample['text'] if "text" in sample else self.load_transcript(sample['text_filepath'])
+        transcript = self.parse_transcript(transcript_text)
         return features, transcript, sample['audio_filepath']
 
     def __len__(self):
@@ -99,9 +102,12 @@ class AudioDataset(Dataset):
         input_lengths.fill_(max_seqlength//2)
         return feats, targets, input_lengths, input_lengths
 
-    def parse_transcript(self, transcript_path):
+    def load_transcript(self, transcript_path):
         with open(transcript_path, 'r', encoding="utf-8") as transcript_file:
             transcript = transcript_file.read().replace('\n', '')
+        return transcript
+
+    def parse_transcript(self, transcript):
         transcript = list(filter(lambda x: x != self.blank_index, [self.labels_map.get(x) for x in list(transcript)]))
         return transcript
 
