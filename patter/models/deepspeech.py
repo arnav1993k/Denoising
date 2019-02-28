@@ -2,7 +2,7 @@ import math
 import torch
 import torch.nn as nn
 
-from apex import amp
+# from apex import amp
 
 from collections import OrderedDict
 from patter.models.model import SpeechModel
@@ -67,7 +67,7 @@ class DeepSpeechOptim(SpeechModel):
             self.loss_func = nn.CTCLoss(blank=self.blank_index, reduction='sum')
         super().train(mode=mode)
 
-    @amp.float_function
+    # @amp.float_function
     def loss(self, x, y, x_length=None, y_length=None):
         """
         Compute CTC loss for the given inputs

@@ -11,8 +11,8 @@ from patter.util import AverageMeter, TensorboardLogger
 from patter.models import SpeechModel
 from patter.evaluator import validate
 
-from apex import amp
-from apex.parallel.LARC import LARC
+# from apex import amp
+# from apex.parallel.LARC import LARC
 
 optimizers = {
     "sgd": torch.optim.SGD,

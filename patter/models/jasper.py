@@ -61,7 +61,7 @@ class JasperBlock(nn.Module):
     def _get_conv_bn_layer(self, inplanes, planes, kernel_size=11, stride=1, dilation=1, padding=0):
         layers = [
             nn.Conv1d(inplanes, planes, kernel_size, stride=stride, dilation=dilation, padding=padding, bias=False),
-            nn.BatchNorm1d(planes)
+            nn.BatchNorm1d(planes, eps=1e-3)
         ]
         return layers
 
@@ -140,7 +140,7 @@ class Jasper(SpeechModel):
             self.loss_func = nn.CTCLoss(blank=self.blank_index, reduction='mean')
         super().train(mode=mode)
 
-    @amp.float_function
+    # @amp.float_function
     def loss(self, x, y, x_length=None, y_length=None):
         """
         Compute CTC loss for the given inputs
@@ -180,7 +180,7 @@ class Jasper(SpeechModel):
                 pass
         return seq_len.int()
 
-    def forward(self, x, lengths=None):
+    def forward(self, x, lengths=0):
         """
         Perform a forward pass through the DeepSpeech model. Inputs are a batched spectrogram Variable and a Variable
         that indicates the sequence lengths of each example.
@@ -195,9 +195,10 @@ class Jasper(SpeechModel):
 
         x = self.encoder([x])[-1]
         x = self.decoder(x)
-        output_lengths = self.get_seq_lens(lengths)
+#        output_lengths = self.get_seq_lens(lengths)
 
-        return x.transpose(1,2), output_lengths
+#        return x.transpose(1,2), output_lengths
+        return x.transpose(1,2)
 
     def get_filter_images(self):
         """
