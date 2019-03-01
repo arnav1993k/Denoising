@@ -216,7 +216,7 @@ def run_test_apex(model, file_path, features, max_length,device, psf=False):
         dec = dec.cpu().numpy()
         dec = dec.squeeze()
     specs = [X.T,dec.T,y.T]
-    return specs,ph, input_path[i]
+    return specs,ph, file_path[i][0]
 
 def get_mag(mel, n_fft, features):
     mel = np.exp(mel)
