@@ -133,7 +133,7 @@ else:
             "features": 64
         },
         "training": {
-            "save_path": "/raid/Speech/test_models/model_lib_hvd.ckpt",
+            "save_path": "/raid/Speech/test_models/model_lib_apx.ckpt",
             "train_test_split": 1,
             "batch_size": 64,
             "num_epochs": 4000,
@@ -252,7 +252,7 @@ def train(epoch):
             writer.add_scalar('Train/AE_Loss', ae_loss, n_iter * epoch + batch_idx)
     if epoch % 10 == 0 and epoch != 0:
         lr *= 0.9
-        for param_group in model.autoencoder.optimizer.param_groups:
+        for param_group in model.module.autoencoder.optimizer.param_groups:
            param_group['lr'] = lr
     avg_loss = sum_loss / n_iter
     if args.local_rank == 0:
