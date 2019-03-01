@@ -271,7 +271,7 @@ def train(epoch):
 
 
 
-for epoch in range(1, args.epochs + 1):
+for epoch in range(0, args.epochs):
     #=====START: ADDED FOR DISTRIBUTED======
     if args.distributed:
         train_sampler.set_epoch(epoch)
