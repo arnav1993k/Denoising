@@ -101,11 +101,11 @@ Change sampler to distributed if running distributed.
 Shuffle data loader only if distributed.
 '''
 if args.local_rank == 0:
-    writer = SummaryWriter('train_summary/librosa_hvd/')
+    writer = SummaryWriter('/raid/train_summary/librosa_apx/')
 params={
        "data_specs":{
-           "noisy_path":"/raid/Speech/LibriSpeech/clean_noisy_noise/test_batch_1/input/",
-           "clean_path":"/raid/Speech/LibriSpeech/clean_noise/clean/",
+           "noisy_path":"/raid/input/",
+           "clean_path":"/raid/clean/",
             },
         "spectrogram_specs":{
             "window_size":20e-3,
@@ -114,15 +114,15 @@ params={
             "features":64
         },
         "training":{
-            "save_path":"/raid/Speech/test_models/model_lib_hvd.ckpt",
+            "save_path":"/raid/checkpoints/model_lib_apx.ckpt",
             "train_test_split":1,
-            "batch_size":64,
+            "batch_size":512,
             "num_epochs":4000,
             "device":"cuda",
             "seq_length":400 #keep odd
         }
        }
-seed_model_path = "checkpoints/librosa_model.pt"
+seed_model_path = "/raid/models/librosa_model.pt"
 seed_model = ModelFactory.load(seed_model_path)
 first_layer = seed_model
 features = params["spectrogram_specs"]["features"]
