@@ -1,38 +1,12 @@
 import soundfile as sf
 import numpy as np
 from utils import get_psf_mel, get_clean_file, getListOfFiles, get_mel
-import torch
+import pickle
 import torch.utils.data as data
-def get_batch(batch_size, input_path, target_path, features, max_length=3000,features_type='logfbank',window_size=20e-3,window_stride=5e-3):
-    batch_data_X = 0*np.ones((batch_size,max_length,features))
-    batch_data_y = 0*np.ones((batch_size,max_length,features))
-    mask_data = np.zeros((batch_size,max_length,features))
-    batch_indices = np.random.choice(len(input_path),batch_size)
-    for i in range(batch_size):
-        signal, sample_freq = sf.read(input_path[batch_indices[i]])
-        target, sample_freq = sf.read(get_clean_file(input_path[batch_indices[i]],target_path))
-        n_window_size = int(sample_freq * window_size)
-        n_window_stride = int(sample_freq * window_stride)
-        X,_ = get_psf_mel(signal,sample_freq, 512, n_window_size,n_window_stride, features)
-        y,_ = get_psf_mel(target,sample_freq, 512, n_window_size,n_window_stride, features)
-        if X.shape[0]>max_length:
-            start = np.random.randint(X.shape[0]-max_length)
-            X=X[start:start+max_length]
-            y=y[start:start+max_length]
-            batch_data_X[i]=X
-            batch_data_y[i]=y
-        else:
-            batch_data_X[i][:X.shape[0]]=X
-            batch_data_y[i][:y.shape[0]]=y
-        mask_data[i][:y.shape[0]]=np.ones((y.shape[0],features))
-        duration= len(signal)/sample_freq
-    return batch_data_X,batch_data_y, mask_data, duration, sample_freq
-
 class Dataset(data.Dataset):
 
-    def __init__(self, input_path, target_path, features, max_length=3000,window_size=20e-3,window_stride=5e-3):
-        self.input_path = input_path
-        self.target_path = target_path
+    def __init__(self, filemap, features, max_length=3000,window_size=20e-3,window_stride=5e-3):
+        self.filemap = filemap
         self.features = features
         self.max_length = max_length
         self.window_size = window_size
@@ -41,14 +15,14 @@ class Dataset(data.Dataset):
 
     def __len__(self):
         'Denotes the total number of samples'
-        return len(self.input_path)
+        return len(self.filemap)
 
     def __getitem__(self, index):
         'Generates one sample of data'
         # Select sample
         mask_data = np.zeros((self.max_length, self.features))
-        noisy_file = self.input_path[index]
-        clean_file = get_clean_file(noisy_file,self.target_path)
+        noisy_file = self.filemap[index][0]
+        clean_file = self.filemap[index][1]
         signal, sample_freq = sf.read(noisy_file)
         target, sample_freq = sf.read(clean_file)
         n_window_size = int(sample_freq * self.window_size)

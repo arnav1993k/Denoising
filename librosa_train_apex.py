@@ -28,7 +28,7 @@ import torch.utils.data.distributed
 
 '''Import torch.distributed'''
 import torch.distributed as dist
-
+import pickle
 #=====END:   ADDED FOR DISTRIBUTED======
 
 # Training settings
@@ -37,7 +37,7 @@ parser.add_argument('--batch-size', type=int, default=64, metavar='N',
                     help='input batch size for training (default: 64)')
 parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
                     help='input batch size for testing (default: 1000)')
-parser.add_argument('--epochs', type=int, default=10, metavar='N',
+parser.add_argument('--epochs', type=int, default=1000, metavar='N',
                     help='number of epochs to train (default: 10)')
 parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
                     help='learning rate (default: 0.01)')
@@ -100,8 +100,9 @@ Shuffle data loader only if distributed.
 if args.ngc:
     params={
            "data_specs":{
-               "noisy_path":"/raid/input/",
-               "clean_path":"/raid/clean/",
+               "noisy_path":"/data/input/",
+               "clean_path":"/data/clean/",
+               "file_map_path": "/data/file_map.pkl"
                 },
             "spectrogram_specs":{
                 "window_size":20e-3,
@@ -125,6 +126,7 @@ else:
         "data_specs": {
             "noisy_path": "/raid/Speech/LibriSpeech/clean_noisy_noise/test_batch_1/input/",
             "clean_path": "/raid/Speech/LibriSpeech/clean_noise/clean/",
+            "file_map_path": "/raid/Speech/file_map.pkl"
         },
         "spectrogram_specs": {
             "window_size": 20e-3,
@@ -172,7 +174,7 @@ clean_path_test = clean_path[split_point:]
 features_type=params["spectrogram_specs"]["type"]
 window_size=params["spectrogram_specs"]["window_size"]
 window_stride=params["spectrogram_specs"]["window_stride"]
-
+filemap = pickle.load(open(params["data_specs"]["file_map_path"],"rb"))
 class Model(nn.Module):
     def __init__(self):
         super(Model,self).__init__()
@@ -203,7 +205,7 @@ class Model(nn.Module):
         return dec_op, dec_y, masked_op, masked_y
 
 # Define dataset...
-train_dataset =  Dataset(actual_path, clean_path, features, max_length)
+train_dataset =  Dataset(filemap, features, max_length)
 
 if args.distributed:
     train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
@@ -261,7 +263,7 @@ def train(epoch):
         if avg_loss.data < model.module.autoencoder.minloss:
             torch.save(model.module.autoencoder.state_dict(), save_path)
             model.module.autoencoder.minloss = avg_loss.data
-        specs, ph, fname = run_test(model.module.autoencoder, actual_path, clean_path, features, max_length, device, psf=False)
+        specs, ph, fname = run_test_apex(model.module.autoencoder, filemap, features, max_length, device, psf=False)
         buf = plot_spectrogram(specs, band=300, labels=["noisy", "denoised", "target"], save=True, fname=fname)
         im_to_tensorboard(buf, writer, epoch)
         get_sound(specs, writer, ph, epoch, False, psf=False)

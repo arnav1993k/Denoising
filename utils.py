@@ -198,6 +198,26 @@ def run_test(model, input_path, target_path, features, max_length,device, psf=Fa
     specs = [X.T,dec.T,y.T]
     return specs,ph, input_path[i]
 
+def run_test_apex(model, file_path, features, max_length,device, psf=False):
+    i = np.random.choice(len(file_path),1)[0]
+    signal, sample_freq = sf.read(file_path[i][0])
+    target, sample_freq = sf.read(file_path[i][1])
+    if not psf:
+        X, ph = get_mel(signal,sample_freq, 512, 320, 160, 64,pad_to=0)
+        y, _ = get_mel(target,sample_freq, 512, 320, 160, 64,pad_to=0)
+    else:
+        X, ph = get_psf_mel(signal, sample_freq, 512, 320, 160, 64, pad_to=0)
+        y, _ = get_psf_mel(target, sample_freq, 512, 320, 160, 64, pad_to=0)
+    x = np.expand_dims(X,axis=0)
+    x = np.expand_dims(x,axis=0)
+    x = torch.FloatTensor(x).to(device)
+    with torch.no_grad():
+        dec = model(x)
+        dec = dec.cpu().numpy()
+        dec = dec.squeeze()
+    specs = [X.T,dec.T,y.T]
+    return specs,ph, input_path[i]
+
 def get_mag(mel, n_fft, features):
     mel = np.exp(mel)
     mel_basis = librosa.filters.mel(sr=16000,
