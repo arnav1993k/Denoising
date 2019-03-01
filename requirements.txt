@@ -1,0 +1,9 @@
+numpy
+python-levenshtein
+librosa
+SoundFile
+tqdm
+toml
+tensorboardX
+marshmallow==2.15.1
+python_speech_features
