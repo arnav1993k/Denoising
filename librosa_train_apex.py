@@ -180,8 +180,8 @@ class Model(nn.Module):
         self.first_layer = first_layer.cuda()
         self.loss_func = nn.KLDivLoss(reduction="batchmean")
         self.abs_loss = nn.L1Loss()
-        dummy_input = torch.ones((batch_size,1,features,max_length)).cuda()
         if args.local_rank==0:
+            dummy_input = torch.ones((64, 1, features, max_length)).cuda()
             writer.add_graph(self.autoencoder,dummy_input)
         self.optimizer = self.autoencoder.optimizer
 
