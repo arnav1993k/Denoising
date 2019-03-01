@@ -33,7 +33,7 @@ import pickle
 
 # Training settings
 parser = argparse.ArgumentParser(description='Denoiser')
-parser.add_argument('--batch-size', type=int, default=64, metavar='N',
+parser.add_argument('--batch_size', type=int, default=128, metavar='N',
                     help='input batch size for training (default: 64)')
 parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
                     help='input batch size for testing (default: 1000)')
@@ -113,7 +113,7 @@ if args.ngc:
             "training":{
                 "save_path":"/raid/checkpoints/model_lib_apx.ckpt",
                 "train_test_split":1,
-                "batch_size":512,
+                "batch_size":128,
                 "num_epochs":4000,
                 "device":"cuda",
                 "seq_length":400,
@@ -155,7 +155,7 @@ features = params["spectrogram_specs"]["features"]
 #train config
 device = torch.device(params["training"]["device"])
 max_length=params["training"]["seq_length"]
-batch_size = params["training"]["batch_size"]
+batch_size = args.batch_size
 num_epochs = params["training"]["num_epochs"]
 save_path = params["training"]["save_path"]
 split = params["training"]["train_test_split"]
@@ -183,7 +183,7 @@ class Model(nn.Module):
         self.loss_func = nn.KLDivLoss(reduction="batchmean")
         self.abs_loss = nn.L1Loss()
         if args.local_rank==0:
-            dummy_input = torch.ones((64, 1, features, max_length)).cuda()
+            dummy_input = torch.ones((batch_size, 1, features, max_length)).cuda()
             writer.add_graph(self.autoencoder,dummy_input)
         self.optimizer = self.autoencoder.optimizer
 
