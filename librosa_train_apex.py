@@ -1,11 +1,6 @@
 from __future__ import print_function
 import argparse
-import os
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
-from torchvision import datasets, transforms
 
 from data import Dataset
 from utils import *
@@ -37,7 +32,7 @@ import torch.distributed as dist
 #=====END:   ADDED FOR DISTRIBUTED======
 
 # Training settings
-parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
+parser = argparse.ArgumentParser(description='Denoiser')
 parser.add_argument('--batch-size', type=int, default=64, metavar='N',
                     help='input batch size for training (default: 64)')
 parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
@@ -54,6 +49,8 @@ parser.add_argument('--seed', type=int, default=1, metavar='S',
                     help='random seed (default: 1)')
 parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='how many batches to wait before logging training status')
+parser.add_argument('--ngc', type=bool, default=False,
+                    help='train on NGC')
 
 #======START: ADDED FOR DISTRIBUTED======
 '''
@@ -100,29 +97,55 @@ kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 Change sampler to distributed if running distributed.
 Shuffle data loader only if distributed.
 '''
-if args.local_rank == 0:
-    writer = SummaryWriter('/raid/train_summary/librosa_apx/')
-params={
-       "data_specs":{
-           "noisy_path":"/raid/input/",
-           "clean_path":"/raid/clean/",
+if args.ngc:
+    params={
+           "data_specs":{
+               "noisy_path":"/raid/input/",
+               "clean_path":"/raid/clean/",
+                },
+            "spectrogram_specs":{
+                "window_size":20e-3,
+                "window_stride":10e-3,
+                "type":"logfbank",
+                "features":64
             },
-        "spectrogram_specs":{
-            "window_size":20e-3,
-            "window_stride":10e-3,
-            "type":"logfbank",
-            "features":64
+            "training":{
+                "save_path":"/raid/checkpoints/model_lib_apx.ckpt",
+                "train_test_split":1,
+                "batch_size":512,
+                "num_epochs":4000,
+                "device":"cuda",
+                "seq_length":400,
+                "seed_model_path":"/raid/models/librosa_model.pt",
+                "summary_path":"/raid/train_summary/librosa_apx/"
+            }
+           }
+else:
+    params = {
+        "data_specs": {
+            "noisy_path": "/raid/Speech/LibriSpeech/clean_noisy_noise/test_batch_1/input/",
+            "clean_path": "/raid/Speech/LibriSpeech/clean_noise/clean/",
         },
-        "training":{
-            "save_path":"/raid/checkpoints/model_lib_apx.ckpt",
-            "train_test_split":1,
-            "batch_size":512,
-            "num_epochs":4000,
-            "device":"cuda",
-            "seq_length":400 #keep odd
+        "spectrogram_specs": {
+            "window_size": 20e-3,
+            "window_stride": 10e-3,
+            "type": "logfbank",
+            "features": 64
+        },
+        "training": {
+            "save_path": "/raid/Speech/test_models/model_lib_hvd.ckpt",
+            "train_test_split": 1,
+            "batch_size": 64,
+            "num_epochs": 4000,
+            "device": "cuda",
+            "seq_length": 400,
+            "seed_model_path": "checkpoints/librosa_model.pt",
+            "summary_path": "train_summary/librosa_apx/"
         }
-       }
-seed_model_path = "/raid/models/librosa_model.pt"
+    }
+if args.local_rank == 0:
+    writer = SummaryWriter(params["training"]["summary_path"])
+seed_model_path = params["training"]["seed_model_path"]
 seed_model = ModelFactory.load(seed_model_path)
 first_layer = seed_model
 features = params["spectrogram_specs"]["features"]
@@ -158,7 +181,8 @@ class Model(nn.Module):
         self.loss_func = nn.KLDivLoss(reduction="batchmean")
         self.abs_loss = nn.L1Loss()
         dummy_input = torch.ones((batch_size,1,features,max_length)).cuda()
-        writer.add_graph(self.autoencoder,dummy_input)
+        if args.local_rank==0:
+            writer.add_graph(self.autoencoder,dummy_input)
         self.optimizer = self.autoencoder.optimizer
 
     def forward(self, X, y, mask):
@@ -177,10 +201,6 @@ class Model(nn.Module):
         dec_y = dec_y.reshape((dec_y.shape[0] * dec_y.shape[1], dec_op.shape[-1]))
         dec_y = torch.exp(dec_y)
         return dec_op, dec_y, masked_op, masked_y
-
-model = Model()
-# Initialize Horovod
-
 
 # Define dataset...
 train_dataset =  Dataset(actual_path, clean_path, features, max_length)
@@ -211,7 +231,7 @@ if args.distributed:
     model = DDP(model)
 #=====END:   ADDED FOR DISTRIBUTED======
 
-optimizer = model.autoencoder.optimizer
+optimizer = model.module.autoencoder.optimizer
 
 def train(epoch):
     n_iter = len(train_loader)
@@ -220,8 +240,8 @@ def train(epoch):
     for batch_idx, (X ,y, mask) in enumerate(train_loader):
         optimizer.zero_grad()
         prob_o, prob_y, spec_o, spec_y = model(X,y,mask)
-        jasper_loss = model.loss_func(prob_o, prob_y)
-        ae_loss = model.abs_loss(spec_o, spec_y)
+        jasper_loss = model.module.loss_func(prob_o, prob_y)
+        ae_loss = model.module.abs_loss(spec_o, spec_y)
         loss = jasper_loss+0.1*ae_loss
         sum_loss+=loss.data
         loss.backward()
@@ -238,10 +258,10 @@ def train(epoch):
     if args.local_rank == 0:
         writer.add_scalar('Train/Epoch_Loss', avg_loss.data, epoch)
         print('Epoch: ', epoch, '| train loss: %.4f' % (avg_loss.data))
-        if avg_loss.data < model.autoencoder.minloss:
-            torch.save(model.autoencoder.state_dict(), save_path)
-            model.autoencoder.minloss = avg_loss.data
-        specs, ph, fname = run_test(model.autoencoder, actual_path, clean_path, features, max_length, device, psf=False)
+        if avg_loss.data < model.module.autoencoder.minloss:
+            torch.save(model.module.autoencoder.state_dict(), save_path)
+            model.module.autoencoder.minloss = avg_loss.data
+        specs, ph, fname = run_test(model.module.autoencoder, actual_path, clean_path, features, max_length, device, psf=False)
         buf = plot_spectrogram(specs, band=300, labels=["noisy", "denoised", "target"], save=True, fname=fname)
         im_to_tensorboard(buf, writer, epoch)
         get_sound(specs, writer, ph, epoch, False, psf=False)
