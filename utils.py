@@ -16,6 +16,7 @@ from matplotlib import pyplot as plt
 import soundfile as sf
 import python_speech_features as psf
 import math
+import copy
 def get_clean_file(noisy_file,clean_path):
     noisy_name = noisy_file.split("/")[-1]
     for c in clean_path:
@@ -84,8 +85,8 @@ def custom_gla(initial_phase, magnitudes, n_fft, hop_length, n_iters):
         complex_spec = magnitudes * phase
         signal = librosa.istft(complex_spec, hop_length=hop_length)
     return signal
-def get_sound(specs,writer,ph,iteration,gla=False, psf=False):
-    text = ["Original","Denoised","Target"]
+def get_sound(specs,writer,ph,iteration,gla=False, psf=False, fname = ""):
+    text = ["Original ","Denoised ","Target "]
     for i in range(len(specs)):
         if psf:
             # specs[i] *= 2
@@ -178,10 +179,7 @@ def get_psf_mel(signal, sample_freq, n_fft, n_window_size, n_window_stride, feat
     # feat /= 2
     return feat, ph
 
-def run_test(model, input_path, target_path, features, max_length,device, psf=False):
-    i = np.random.choice(len(input_path),1)[0]
-    signal, sample_freq = sf.read(input_path[i])
-    target, sample_freq = sf.read(get_clean_file(input_path[i],target_path))
+def run_test(model, signal, target, sample_freq, features, max_length,device, psf=False):
     if not psf:
         X, ph = get_mel(signal,sample_freq, 512, 320, 160, 64,pad_to=0)
         y, _ = get_mel(target,sample_freq, 512, 320, 160, 64,pad_to=0)
@@ -196,7 +194,7 @@ def run_test(model, input_path, target_path, features, max_length,device, psf=Fa
         dec = dec.cpu().numpy()
         dec = dec.squeeze()
     specs = [X.T,dec.T,y.T]
-    return specs,ph, input_path[i]
+    return specs,ph
 
 def run_test_apex(model, file_path, features, max_length,device, psf=False):
     i = np.random.choice(len(file_path),1)[0]
@@ -235,3 +233,32 @@ def get_psf_mag(mel, n_fft, features):
     mel_basis = psf.base.get_filterbanks(features, n_fft, 16000, 0, 8000)
     mag = np.dot(mel.T,mel_basis)
     return mag
+
+
+def get_noisy(original_sound, noise, signal_to_noise=5, max_noise_segment_percent=100):
+    original = copy.deepcopy(original_sound)
+    original_sound /= (original_sound.std() + 1e-20)
+    #     noise_file = noise_files[np.random.randint(len(noise_files))]
+
+    noise_sound = noise/(noise.std()+1e-20)
+    len_soundfile = original_sound.shape[0]
+    noise_level = 10.0 ** (signal_to_noise / 20.0)
+
+    noise_length = int(len_soundfile * 0.01 * max_noise_segment_percent)
+
+    noise_start = np.random.randint(noise_sound.shape[0])
+
+    try:
+        start_index = np.random.randint(len_soundfile - noise_length)
+    except:
+        start_index = 0
+
+    noise = np.zeros(len_soundfile)
+    indices = np.arange(noise_length) + start_index
+    noise_segment = noise_sound[noise_start:noise_start + noise_length]
+    np.put(noise, indices, noise_segment)
+    # add noise to original sound
+    signal = original_sound + noise_level * noise
+    signal *= original.std()
+    signal = np.clip(signal, a_min=-1, a_max=1)
+    return signal,original

@@ -1,8 +1,8 @@
 from __future__ import print_function
 import argparse
 import torch.nn as nn
-
-from data import Dataset
+import csv
+from data import DynamicDataset
 from utils import *
 
 from autoencoder import AutoEncoder_Lib
@@ -100,9 +100,8 @@ Shuffle data loader only if distributed.
 if args.ngc:
     params={
            "data_specs":{
-               "noisy_path":"/data/input/",
-               "clean_path":"/data/clean/",
-               "file_map_path": "/data/file_map.pkl"
+               "noisy_path":"/noisy/",
+               "clean_path":"/data/librispeech/librivox-train-clean-100.csv",
                 },
             "spectrogram_specs":{
                 "window_size":20e-3,
@@ -111,21 +110,21 @@ if args.ngc:
                 "features":64
             },
             "training":{
-                "save_path":"/raid/checkpoints/model_lib_apx.ckpt",
+                "save_path":"/raid/checkpoints/model_lib_full_apx.ckpt",
                 "train_test_split":1,
                 "batch_size":128,
                 "num_epochs":4000,
                 "device":"cuda",
                 "seq_length":400,
                 "seed_model_path":"/raid/models/librosa_model.pt",
-                "summary_path":"/raid/train_summary/librosa_apx/"
+                "summary_path":"/raid/train_summary/librosa_full_apx/"
             }
            }
 else:
     params = {
         "data_specs": {
-            "noisy_path": "/raid/Speech/LibriSpeech/clean_noisy_noise/test_batch_1/input/",
-            "clean_path": "/raid/Speech/LibriSpeech/clean_noise/clean/",
+            "noisy_path": "/raid/Speech/Natural Noise/sounds/village",
+            "clean_path": "/raid/Speech/LibriSpeech/clean_files.csv",
             "file_map_path": "/raid/Speech/file_map.pkl"
         },
         "spectrogram_specs": {
@@ -161,20 +160,29 @@ save_path = params["training"]["save_path"]
 split = params["training"]["train_test_split"]
 
 #data config
-actual_path = sorted(getListOfFiles(params["data_specs"]["noisy_path"]))
-clean_path = sorted(getListOfFiles(params["data_specs"]["clean_path"]))
-split_point = int(split*len(actual_path))
+noisy_files = sorted(getListOfFiles(params["data_specs"]["noisy_path"]))
+all_noise = []
+for n in noisy_files:
+    noise,sr = librosa.load(n, sr=16000)
+    all_noise.append(noise)
 
-actual_path_train = actual_path[:split_point]
-clean_path_train = clean_path[:split_point]
-actual_path_test = actual_path[split_point:]
-clean_path_test = clean_path[split_point:]
+#Load namelist clean_files
+csv_path = params["data_specs"]["clean_path"]
+with open(csv_path, 'r') as f:
+    reader = csv.reader(f)
+    clean_files = list(reader)
+
+split_point = int(split*len(clean_files))
+actual_path_train = clean_files[:split_point]
+clean_path_train = clean_files[:split_point]
+actual_path_test = clean_files[split_point:]
+clean_path_test = clean_files[split_point:]
 
 #spectrogram config
 features_type=params["spectrogram_specs"]["type"]
 window_size=params["spectrogram_specs"]["window_size"]
 window_stride=params["spectrogram_specs"]["window_stride"]
-filemap = pickle.load(open(params["data_specs"]["file_map_path"],"rb"))
+
 class Model(nn.Module):
     def __init__(self):
         super(Model,self).__init__()
@@ -205,7 +213,7 @@ class Model(nn.Module):
         return dec_op, dec_y, masked_op, masked_y
 
 # Define dataset...
-train_dataset =  Dataset(filemap, features, max_length)
+train_dataset =  DynamicDataset(actual_path_train,all_noise, features, max_length)
 
 if args.distributed:
     train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
@@ -263,8 +271,13 @@ def train(epoch):
         if avg_loss.data < model.module.autoencoder.minloss:
             torch.save(model.module.autoencoder.state_dict(), save_path)
             model.module.autoencoder.minloss = avg_loss.data
-        specs, ph, fname = run_test_apex(model.module.autoencoder, filemap, features, max_length, device, psf=False)
-        buf = plot_spectrogram(specs, band=300, labels=["noisy", "denoised", "target"], save=True, fname=fname)
+        idx = np.random.choice(len(actual_path_train), 1)[0]
+        target, sr = sf.read(actual_path_train[idx][0])
+        noise = all_noise[idx % len(all_noise)]
+        level = np.random.randint(-40, -5, 1)[0]
+        signal, target = get_noisy(target, noise, level, np.random.randint(50, 100, 1)[0])
+        specs, ph = run_test(model.module.autoencoder, signal, target, sr, features, max_length, device, psf=False)
+        buf = plot_spectrogram(specs, band=300, labels=["noisy", "denoised", "target"], save=True, fname=actual_path_train[idx][0]+" {} db noise".format(level))
         im_to_tensorboard(buf, writer, epoch)
         get_sound(specs, writer, ph, epoch, False, psf=False)
 

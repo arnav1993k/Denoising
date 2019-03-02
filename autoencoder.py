@@ -78,7 +78,7 @@ class AutoEncoder_Lib(nn.Module):
             block = BasicBlock(channels[i],channels[i+1],transfer='tanh')
             layers.append(block)
         layers.append(nn.Conv2d(in_channels=channels[-2], out_channels=channels[-1], kernel_size=3, padding=1,bias=False))
-        layers.append(nn.Hardtanh(min_val=-5.0, max_val=4.0))
+        # layers.append(nn.Hardtanh(min_val=-5.0, max_val=4.0))
         self.dncnn = nn.Sequential(*layers)
         self.minloss= 1000
         self.optimizer = torch.optim.SGD(self.parameters(), lr=0.01, momentum=0.9)
@@ -94,7 +94,7 @@ class AutoEncoder(nn.Module):
         layers.append(nn.Conv2d(in_channels=in_channels, out_channels=channels[1], kernel_size=1, padding=0,bias=False))
         layers.append(nn.BatchNorm2d(channels[1]))
         for i in range(1,len(channels)-2):
-            block = BasicBlock(channels[i],channels[i+1])
+            block = BasicBlock(channels[i],channels[i+1],transfer='relu')
             layers.append(block)
         layers.append(nn.Conv2d(in_channels=channels[-2], out_channels=channels[-1], kernel_size=3, padding=1,bias=False))
         layers.append(nn.Hardtanh(min_val=-5.0, max_val=4.0))
