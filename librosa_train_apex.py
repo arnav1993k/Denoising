@@ -260,6 +260,7 @@ def train(epoch):
             writer.add_scalar('Train/Loss', loss.data, n_iter * epoch + batch_idx)
             writer.add_scalar('Train/Jasper_Loss', jasper_loss.data, n_iter * epoch + batch_idx)
             writer.add_scalar('Train/AE_Loss', ae_loss, n_iter * epoch + batch_idx)
+            print("Step {} of epoch {} finished.".format(batch_idx,epoch))
     if epoch % 10 == 0 and epoch != 0:
         lr *= 0.9
         for param_group in model.module.autoencoder.optimizer.param_groups:
