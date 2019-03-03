@@ -273,7 +273,7 @@ def train(epoch):
             torch.save(model.module.autoencoder.state_dict(), save_path)
             model.module.autoencoder.minloss = avg_loss.data
         idx = np.random.choice(len(actual_path_train), 1)[0]
-        target, sr = sf.read(actual_path_train[idx][0])
+        target, sr = librosa.load(actual_path_train[idx][0],sr=16000)
         noise = all_noise[idx % len(all_noise)]
         level = np.random.randint(-40, -5, 1)[0]
         signal, target = get_noisy(target, noise, level, np.random.randint(50, 100, 1)[0])
