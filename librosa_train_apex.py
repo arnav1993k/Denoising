@@ -171,7 +171,7 @@ csv_path = params["data_specs"]["clean_path"]
 with open(csv_path, 'r') as f:
     reader = csv.reader(f)
     clean_files = list(reader)
-
+clean_files = clean_files[1:]
 split_point = int(split*len(clean_files))
 actual_path_train = clean_files[:split_point]
 clean_path_train = clean_files[:split_point]
