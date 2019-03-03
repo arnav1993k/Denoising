@@ -1,6 +1,7 @@
 import soundfile as sf
 import numpy as np
 from utils import get_mel, get_noisy
+import librosa
 import pickle
 import torch.utils.data as data
 class Dataset(data.Dataset):
@@ -69,7 +70,7 @@ class DynamicDataset(data.Dataset):
         # Select sample
         mask_data = np.zeros((self.max_length, self.features))
         noise = self.all_noise[index%len(self.all_noise)]
-        target, sample_freq = sf.read(self.targets[index][0])
+        target, sample_freq = librosa.load(self.targets[index][0],sr=16000)
         snr = np.random.randint(-40, -5, 1)[0]
         percent = np.random.randint(50, 100, 1)[0]
         signal, target = get_noisy(target, noise, snr, percent)
