@@ -110,14 +110,14 @@ if args.ngc:
                 "features":64
             },
             "training":{
-                "save_path":"/raid/checkpoints/model_lib_full_apx.ckpt",
+                "save_path":"/results/model_lib_full_apx.ckpt",
                 "train_test_split":1,
                 "batch_size":128,
                 "num_epochs":4000,
                 "device":"cuda",
                 "seq_length":400,
                 "seed_model_path":"/raid/models/librosa_model.pt",
-                "summary_path":"/raid/train_summary/librosa_full_apx/"
+                "summary_path":"/results/"
             }
            }
 else:
