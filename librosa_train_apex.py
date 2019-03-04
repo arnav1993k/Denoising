@@ -51,7 +51,10 @@ parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='how many batches to wait before logging training status')
 parser.add_argument('--ngc', type=bool, default=False,
                     help='train on NGC')
-
+parser.add_argument('--noise_min', type=int, default=-20,
+                    help='noise level minimum')
+parser.add_argument('--noise_max', type=bool, default=-50,
+                    help='noise level maximum')
 #======START: ADDED FOR DISTRIBUTED======
 '''
 Add some distributed options. For explanation of dist-url and dist-backend please see
@@ -158,7 +161,8 @@ batch_size = args.batch_size
 num_epochs = params["training"]["num_epochs"]
 save_path = params["training"]["save_path"]
 split = params["training"]["train_test_split"]
-
+noise_min = args.noise_min
+noise_max = args.noise_max
 #data config
 noisy_files = sorted(getListOfFiles(params["data_specs"]["noisy_path"]))
 all_noise = []
@@ -275,7 +279,7 @@ def train(epoch):
         idx = np.random.choice(len(actual_path_train), 1)[0]
         target, sr = librosa.load(actual_path_train[idx][0],sr=16000)
         noise = all_noise[idx % len(all_noise)]
-        level = np.random.randint(-40, -5, 1)[0]
+        level = np.random.randint(noise_max, noise_min, 1)[0]
         signal, target = get_noisy(target, noise, level, np.random.randint(50, 100, 1)[0])
         specs, ph = run_test(model.module.autoencoder, signal, target, sr, features, max_length, device, psf=False)
         buf = plot_spectrogram(specs, band=300, labels=["noisy", "denoised", "target"], save=True, fname=actual_path_train[idx][0]+" {} db noise".format(level))

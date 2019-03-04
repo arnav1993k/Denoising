@@ -51,7 +51,7 @@ class Dataset(data.Dataset):
 # training_set.__getitem__(1)
 class DynamicDataset(data.Dataset):
 
-    def __init__(self, original, all_noise, features, max_length=3000,window_size=20e-3,window_stride=5e-3):
+    def __init__(self, original, all_noise, features, max_length=3000,window_size=20e-3,window_stride=5e-3, noise_min=-20, noise_max=-50):
         super(DynamicDataset,self).__init__()
         self.targets = original
         self.all_noise = all_noise
@@ -59,6 +59,8 @@ class DynamicDataset(data.Dataset):
         self.max_length = max_length
         self.window_size = window_size
         self.window_stride = window_stride
+        self.noise_min = noise_min
+        self.noise_max = noise_max
 
 
     def __len__(self):
@@ -71,7 +73,7 @@ class DynamicDataset(data.Dataset):
         mask_data = np.zeros((self.max_length, self.features))
         noise = self.all_noise[index%len(self.all_noise)]
         target, sample_freq = librosa.load(self.targets[index][0],sr=16000)
-        snr = np.random.randint(-40, -5, 1)[0]
+        snr = np.random.randint(self.noise_max, self.noise_min, 1)[0]
         percent = np.random.randint(50, 100, 1)[0]
         signal, target = get_noisy(target, noise, snr, percent)
         n_window_size = int(sample_freq * self.window_size)
