@@ -51,9 +51,9 @@ parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='how many batches to wait before logging training status')
 parser.add_argument('--ngc', type=bool, default=False,
                     help='train on NGC')
-parser.add_argument('--noise_min', type=int, default=-20,
+parser.add_argument('--noise_min', type=int, default=0,
                     help='noise level minimum')
-parser.add_argument('--noise_max', type=bool, default=-50,
+parser.add_argument('--noise_max', type=bool, default=-15,
                     help='noise level maximum')
 #======START: ADDED FOR DISTRIBUTED======
 '''
@@ -218,7 +218,7 @@ class Model(nn.Module):
         return dec_op, dec_y, masked_op, masked_y
 
 # Define dataset...
-train_dataset =  DynamicDataset(actual_path_train, all_noise, features, max_length)
+train_dataset =  DynamicDataset(actual_path_train, all_noise, features, max_length,noise_min=noise_min,noise_max=noise_max)
 
 if args.distributed:
     train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
