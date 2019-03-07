@@ -289,7 +289,7 @@ def train(epoch):
         noise = all_noise[idx % len(all_noise)]
         level = np.random.randint(noise_max, noise_min, 1)[0]
         signal, target = get_noisy(target, noise, level, 100)
-        specs, ph = run_test(model.module.autoencoder, signal, target, sr, features, max_length, device, psf=False)
+        specs, ph = run_test(model.module.autoencoder, signal, target, sr, features, max_length, device, psf=False, noise=True)
         buf = plot_spectrogram(specs, band=300, labels=["noisy", "denoised", "noise", "target"], save=True, fname=actual_path_train[idx][0]+" {} db noise".format(level))
         im_to_tensorboard(buf, writer, epoch)
         get_sound(specs, writer, ph, epoch, False, psf=False,text=["Original","Denoised","Noise","Target"])
