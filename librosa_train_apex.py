@@ -115,11 +115,11 @@ if args.ngc:
             "training":{
                 "save_path":"/results/model_lib_full_apx.ckpt",
                 "train_test_split":1,
-                "batch_size":128,
+                "batch_size":64,
                 "num_epochs":4000,
                 "device":"cuda",
                 "seq_length":400,
-                "seed_model_path":"/raid/models/librosa_model.pt",
+                "seed_model_path":"/raid/jasper_torch/librosa_model.pt",
                 "summary_path":"/results/"
             }
            }
@@ -190,7 +190,7 @@ window_stride=params["spectrogram_specs"]["window_stride"]
 class Model(nn.Module):
     def __init__(self):
         super(Model,self).__init__()
-        self.autoencoder = AutoEncoder_Lib([1,32,128,32,1]).cuda()
+        self.autoencoder = AutoEncoder_Lib([1,32,64,64,32,1]).cuda()
         self.first_layer = first_layer.cuda()
         self.loss_func = nn.KLDivLoss(reduction="batchmean")
         self.abs_loss = nn.L1Loss()
@@ -213,11 +213,12 @@ class Model(nn.Module):
             dec_y = self.first_layer(masked_y)
         dec_op = dec_op.reshape((dec_op.shape[0] * dec_op.shape[1], dec_op.shape[-1]))
         dec_y = dec_y.reshape((dec_y.shape[0] * dec_y.shape[1], dec_op.shape[-1]))
+        # dec_y = torch.argmax(dec_y,dim=1)
         dec_y = torch.exp(dec_y)
         return dec_op, dec_y, masked_op, masked_y
 
 # Define dataset...
-train_dataset =  DynamicDataset(actual_path_train,all_noise, features, max_length)
+train_dataset =  DynamicDataset(actual_path_train, all_noise, features, max_length)
 
 if args.distributed:
     train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
@@ -256,7 +257,7 @@ def train(epoch):
         prob_o, prob_y, spec_o, spec_y = model(X,y,mask)
         jasper_loss = model.module.loss_func(prob_o, prob_y)
         ae_loss = model.module.abs_loss(spec_o, spec_y)
-        loss = jasper_loss+0.1*ae_loss
+        loss = jasper_loss+ae_loss
         sum_loss+=loss.data
         loss.backward()
         optimizer.step()
@@ -277,10 +278,10 @@ def train(epoch):
             torch.save(model.module.autoencoder.state_dict(), save_path)
             model.module.autoencoder.minloss = avg_loss.data
         idx = np.random.choice(len(actual_path_train), 1)[0]
-        target, sr = librosa.load(actual_path_train[idx][0],sr=16000)
+        target, sr = sf.read(actual_path_train[idx][0])
         noise = all_noise[idx % len(all_noise)]
         level = np.random.randint(noise_max, noise_min, 1)[0]
-        signal, target = get_noisy(target, noise, level, np.random.randint(50, 100, 1)[0])
+        signal, target = get_noisy(target, noise, level, 100)
         specs, ph = run_test(model.module.autoencoder, signal, target, sr, features, max_length, device, psf=False)
         buf = plot_spectrogram(specs, band=300, labels=["noisy", "denoised", "target"], save=True, fname=actual_path_train[idx][0]+" {} db noise".format(level))
         im_to_tensorboard(buf, writer, epoch)

@@ -72,10 +72,10 @@ class DynamicDataset(data.Dataset):
         # Select sample
         mask_data = np.zeros((self.max_length, self.features))
         noise = self.all_noise[index%len(self.all_noise)]
-        target, sample_freq = librosa.load(self.targets[index][0],sr=16000)
+        target, sample_freq = sf.read(self.targets[index][0])
         snr = np.random.randint(self.noise_max, self.noise_min, 1)[0]
         percent = np.random.randint(50, 100, 1)[0]
-        signal, target = get_noisy(target, noise, snr, percent)
+        signal, target = get_noisy(target, noise, snr, 100)
         n_window_size = int(sample_freq * self.window_size)
         n_window_stride = int(sample_freq * self.window_stride)
         X, _ = get_mel(signal, sample_freq, 512, n_window_size, n_window_stride, self.features)
