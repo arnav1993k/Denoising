@@ -85,8 +85,7 @@ def custom_gla(initial_phase, magnitudes, n_fft, hop_length, n_iters):
         complex_spec = magnitudes * phase
         signal = librosa.istft(complex_spec, hop_length=hop_length)
     return signal
-def get_sound(specs,writer,ph,iteration,gla=False, psf=False, fname = ""):
-    text = ["Original ","Denoised ","Target "]
+def get_sound(specs,writer,ph,iteration,gla=False, psf=False, fname = "", text = ["Original","Denoised","Target"]):
     for i in range(len(specs)):
         if psf:
             # specs[i] *= 2
@@ -179,7 +178,7 @@ def get_psf_mel(signal, sample_freq, n_fft, n_window_size, n_window_stride, feat
     # feat /= 2
     return feat, ph
 
-def run_test(model, signal, target, sample_freq, features, max_length,device, psf=False):
+def run_test(model, signal, target, sample_freq, features, max_length,device, psf=False,noise=False):
     if not psf:
         X, ph = get_mel(signal,sample_freq, 512, 320, 160, 64,pad_to=0)
         y, _ = get_mel(target,sample_freq, 512, 320, 160, 64,pad_to=0)
@@ -190,10 +189,18 @@ def run_test(model, signal, target, sample_freq, features, max_length,device, ps
     x = np.expand_dims(x,axis=0)
     x = torch.FloatTensor(x).to(device)
     with torch.no_grad():
-        dec = model(x)
-        dec = dec.cpu().numpy()
-        dec = dec.squeeze()
-    specs = [X.T,dec.T,y.T]
+        if noise:
+            dec,n=model(x)
+            dec = dec.cpu().numpy()
+            dec = dec.squeeze()
+            n = n.cpu().numpy()
+            n = n.squeeze()
+            specs = [X.T,dec.T,n.T,y.T]
+        else:
+            dec = model(x)
+            dec = dec.cpu().numpy()
+            dec = dec.squeeze()
+            specs = [X.T,dec.T,y.T]
     return specs,ph
 
 def run_test_apex(model, file_path, features, max_length,device, psf=False):
@@ -225,7 +232,7 @@ def get_mag(mel, n_fft, features):
                                     norm=None,
                                     fmin=0,
                                     fmax=8000)
-    mag = np.dot(mel_basis.T,mel)
+    mag = np.dot(mel_basis.T,mel.T)
     return mag
 
 def get_psf_mag(mel, n_fft, features):
