@@ -51,7 +51,7 @@ class Dataset(data.Dataset):
 # training_set.__getitem__(1)
 class DynamicDataset(data.Dataset):
 
-    def __init__(self, original, all_noise, features, max_length=3000,window_size=20e-3,window_stride=5e-3, noise_min=-20, noise_max=-50):
+    def __init__(self, original, all_noise, features, max_length=3000,window_size=20e-3,window_stride=5e-3, noise_min=-20, noise_max=-50,return_noise=False):
         super(DynamicDataset,self).__init__()
         self.targets = original
         self.all_noise = all_noise
@@ -61,7 +61,7 @@ class DynamicDataset(data.Dataset):
         self.window_stride = window_stride
         self.noise_min = noise_min
         self.noise_max = noise_max
-
+        self.return_noise = return_noise
 
     def __len__(self):
         'Denotes the total number of samples'
@@ -80,16 +80,26 @@ class DynamicDataset(data.Dataset):
         n_window_stride = int(sample_freq * self.window_stride)
         X, _ = get_mel(signal, sample_freq, 512, n_window_size, n_window_stride, self.features)
         y, _ = get_mel(target, sample_freq, 512, n_window_size, n_window_stride,self.features)
+        if self.return_noise:
+            noise = signal-target
+            n,_ = get_mel(noise, sample_freq, 512, n_window_size, n_window_stride,self.features)
         if X.shape[0] > self.max_length:
             start = np.random.randint(X.shape[0] - self.max_length)
             X = X[start:start + self.max_length]
             y = y[start:start + self.max_length]
             mask_data = np.ones((self.max_length, self.features))
+            if self.return_noise:
+               n = n[start:start + self.max_length]
         else:
             X = np.pad(X, [(0, self.max_length-X.shape[0]),(0,0)], mode='constant',constant_values=-5)
             mask_data[:y.shape[0]] = np.ones((y.shape[0], self.features))
             y = np.pad(y, [(0, self.max_length - y.shape[0]), (0, 0)], mode='constant', constant_values=-5)
+            if self.return_noise:
+                n = np.pad(n, [(0, self.max_length-n.shape[0]),(0,0)], mode='constant',constant_values=-5)
         X = np.expand_dims(X, axis=0).astype(np.float32)
         y = np.expand_dims(y, axis=0).astype(np.float32)
         mask_data = np.expand_dims(mask_data, axis=0).astype(np.float32)
+        if self.return_noise:
+            n = np.expand_dims(n, axis=0).astype(np.float32)
+            return X, y, mask_data, n
         return X, y, mask_data

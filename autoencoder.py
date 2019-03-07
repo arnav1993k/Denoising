@@ -85,7 +85,34 @@ class AutoEncoder_Lib(nn.Module):
     def forward(self,x):
         out = self.dncnn(x)
         return out
-
+class AutoEncoder_Lib_Noise(nn.Module):
+    def __init__(self, channels):
+        super(AutoEncoder_Lib_Noise, self).__init__()
+        layers= []
+        denoiser =[]
+        noiser = []
+        in_channels = channels[0]
+        layers.append(nn.Conv2d(in_channels=in_channels, out_channels=channels[1], kernel_size=1, padding=0,bias=False))
+        layers.append(nn.BatchNorm2d(channels[1]))
+        for i in range(1,len(channels)-3):
+            block = BasicBlock(channels[i],channels[i+1],transfer='tanh')
+            layers.append(block)
+        denoiser.append(BasicBlock(channels[-3],channels[-2],transfer='tanh'))
+        denoiser.append(nn.Conv2d(in_channels=channels[-2], out_channels=channels[-1], kernel_size=3, padding=1,bias=False))
+        denoiser.append(nn.Hardtanh(min_val=-5.0, max_val=5.0))
+        noiser.append(BasicBlock(channels[-3], channels[-2], transfer='tanh'))
+        noiser.append(nn.Conv2d(in_channels=channels[-2], out_channels=channels[-1], kernel_size=3, padding=1, bias=False))
+        noiser.append(nn.Hardtanh(min_val=-5.0, max_val=5.0))
+        self.encoder = nn.Sequential(*layers)
+        self.denoiser = nn.Sequential(*denoiser)
+        self.noiser = nn.Sequential(*noiser)
+        self.minloss= 1000
+        self.optimizer = torch.optim.SGD(self.parameters(), lr=0.01, momentum=0.9)
+    def forward(self,x):
+        enc = self.encoder(x)
+        denoised = self.denoiser(enc)
+        noise = self.noiser(enc)
+        return denoised,noise
 class AutoEncoder(nn.Module):
     def __init__(self, channels):
         super(AutoEncoder, self).__init__()
