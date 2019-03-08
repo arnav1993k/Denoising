@@ -219,7 +219,7 @@ class Model(nn.Module):
         dec_y = dec_y.reshape((dec_y.shape[0] * dec_y.shape[1], dec_op.shape[-1]))
         dec_n = dec_n.reshape((dec_n.shape[0] * dec_n.shape[1], dec_op.shape[-1]))
         # dec_y = torch.argmax(dec_y,dim=1)
-        print(dec_op.shape,dec_n.shape, dec_y.shape)
+        # print(dec_op.shape,dec_n.shape, dec_y.shape)
         dec_y = torch.exp(dec_y)
         # dec_op = torch.exp(dec_op)
         return dec_op, dec_y, masked_op, masked_y, dec_n
