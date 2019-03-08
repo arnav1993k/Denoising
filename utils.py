@@ -232,7 +232,7 @@ def get_mag(mel, n_fft, features):
                                     norm=None,
                                     fmin=0,
                                     fmax=8000)
-    mag = np.dot(mel_basis.T,mel.T)
+    mag = np.dot(mel_basis.T,mel)
     return mag
 
 def get_psf_mag(mel, n_fft, features):
