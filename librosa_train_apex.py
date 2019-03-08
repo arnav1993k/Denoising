@@ -51,9 +51,9 @@ parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='how many batches to wait before logging training status')
 parser.add_argument('--ngc', type=bool, default=False,
                     help='train on NGC')
-parser.add_argument('--noise_min', type=int, default=0,
+parser.add_argument('--noise_min', type=int, default=-5,
                     help='noise level minimum')
-parser.add_argument('--noise_max', type=bool, default=-15,
+parser.add_argument('--noise_max', type=bool, default=-12,
                     help='noise level maximum')
 #======START: ADDED FOR DISTRIBUTED======
 '''
@@ -118,7 +118,7 @@ if args.ngc:
                 "batch_size":64,
                 "num_epochs":4000,
                 "device":"cuda",
-                "seq_length":400,
+                "seq_length":305,
                 "seed_model_path":"/raid/jasper_torch/librosa_model.pt",
                 "summary_path":"/results/"
             }
@@ -142,13 +142,14 @@ else:
             "batch_size": 64,
             "num_epochs": 4000,
             "device": "cuda",
-            "seq_length": 400,
+            "seq_length": 305,
             "seed_model_path": "checkpoints/librosa_model.pt",
             "summary_path": "train_summary/librosa_apx/"
         }
     }
 if args.local_rank == 0:
     writer = SummaryWriter(params["training"]["summary_path"])
+    print("Job started with params ", params)
 seed_model_path = params["training"]["seed_model_path"]
 seed_model = ModelFactory.load(seed_model_path)
 first_layer = seed_model
@@ -193,7 +194,7 @@ class Model(nn.Module):
         self.autoencoder = AutoEncoder_Lib([1,32,64,64,32,1]).cuda()
         self.first_layer = first_layer.cuda()
         self.loss_func = nn.KLDivLoss(reduction="batchmean")
-        self.abs_loss = nn.L1Loss()
+        self.abs_loss = nn.MSELoss()
         if args.local_rank==0:
             dummy_input = torch.ones((batch_size, 1, features, max_length)).cuda()
             writer.add_graph(self.autoencoder,dummy_input)
